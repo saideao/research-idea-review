@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 Level = Literal["high", "medium", "low"]
+PaperType = Literal["empirical", "survey", "position", "resource", "theory", "other"]
 
 
 # ---------- 模型输出：检索计划 ----------
@@ -59,6 +60,10 @@ class AbstractCheck(BaseModel):
 
 
 class QualityAssessment(BaseModel):
+    # 老版本的精读笔记没有这一项，读出来记成 other
+    paper_type: PaperType = Field(default="other", description="论文类型：empirical 方法或实证研究 / survey 综述 / "
+                                                               "position 立场或观点文章 / resource 数据集、基准或工具 / "
+                                                               "theory 理论分析 / other 其他")
     evidence_strength: Level = Field(description="核心结论的证据强度")
     rigor: list[str] = Field(description="对基线、消融、统计检验、数据规模等的具体观察，注明页码")
     reproducibility: Level = Field(description="可复现程度：代码、数据、超参数是否给全")
@@ -237,6 +242,8 @@ DESCRIPTIONS_EN = {
     "AbstractCheck.scope_gaps": "Scope left out: the body supports the abstract's claim, but only under narrower conditions "
                                 "(e.g. only some models tested, a very small sample, a single dataset) that the abstract does "
                                 "not mention. State the condition for each, with page numbers; leave empty if none",
+    "QualityAssessment.paper_type": "Paper type: empirical = method or empirical study / survey / position = position or "
+                                    "opinion paper / resource = dataset, benchmark or tool / theory = theoretical analysis / other",
     "QualityAssessment.evidence_strength": "Strength of the evidence behind the core conclusions",
     "QualityAssessment.rigor": "Specific observations on baselines, ablations, statistical tests, data scale, etc., with page numbers",
     "QualityAssessment.reproducibility": "Reproducibility: whether code, data and hyperparameters are fully provided",

@@ -7,9 +7,9 @@ Give it a one-sentence research idea, and it will:
 1. **Plan queries**: turn the idea into several English search queries covering different phrasings and adjacent directions.
 2. **Search**: search Semantic Scholar, arXiv and OpenAlex, then merge and deduplicate.
 3. **Screen**: decide from titles and abstracts which papers to read first. This step only decides "is it worth reading in full", not "has someone already done this".
-4. **Download full texts**: download open-access PDFs, extract the text, and mark each page with `[p.N]`.
-5. **Read and rate quality**: read each full text, write down "what it actually does", check the abstract against the body, and sort the papers into high, medium and low tiers based on their evidence.
-6. **Find gaps**: map out the direction from the reading notes and find gaps backed by evidence from the papers.
+4. **Download full texts**: download open-access PDFs (for papers without a PDF link in the search results, look for an arXiv preprint by title), extract the text, and mark each page with `[p.N]`.
+5. **Read and rate quality**: read each full text, write down "what it actually does", check the abstract against the body, decide the paper type (empirical, survey, position paper, dataset, etc.), and sort the papers into high, medium and low tiers by the standard for that type. If too few full texts were read, or all are low quality, stop here (see [When the evidence is not enough](#when-the-evidence-is-not-enough)).
+6. **Find gaps**: map out the direction from the reading notes and find gaps backed by evidence from the papers. Fewer papers read means fewer gaps.
 7. **Mine new directions**: dig out a few directions from the gaps that differ in substance from your original idea.
 8. **Write proposals (Model A)**: write one proposal for your original idea and one for each new direction.
 9. **Meta review (Models B, C, D…)**: switch to models from other companies, each in a fresh conversation, given only the proposal and the paper material. They write meta reviews covering overlap, causes of death, feasibility and the cheapest falsification experiment, with no scores and no verdict.
@@ -23,7 +23,8 @@ You make the call. The report just lays out the material.
 - **Read full texts, not just abstracts.** Many agents read only abstracts when searching the literature, but some abstracts differ from what the body actually does, and reading abstracts alone can make you skip a direction. So reading and reviewing are based on full texts. Places where an abstract overclaims or contradicts the body are flagged; where the abstract's claim holds but it leaves out its scope (e.g. only tested on some models), that is listed separately and not counted as a contradiction.
 - **The writer and the reviewers come from different companies.** Models tend to please the user and rate their own writing too kindly. Each model in the config is tagged with a `family`, and the program warns you when the proposal writer and a reviewer share one.
 - **Reviewers do not score.** Models are unstable at judging "is it novel, will it work": change a few words in the question and the conclusion may flip. So they only hand over things you can verify: which paper, which page, which experiment.
-- **Paper quality is judged on evidence only.** "Peer-reviewed / preprint" and citation counts are shown separately; the quality tier is based only on the paper's own experiments and arguments.
+- **Paper quality is judged on evidence only.** "Peer-reviewed / preprint" and citation counts are shown separately; the quality tier is based only on the paper's own experiments and arguments, judged by paper type, so a survey or position paper is not rated low just for having no experiments.
+- **No evidence, no made-up analysis.** With only two or three papers read, or only low-quality ones, a model asked to find gaps and write proposals will still produce plenty, but most of it will not hold up, and it costs money and time. So the program stops here and tells you how to add more literature.
 
 ## Install
 
@@ -53,12 +54,15 @@ This creates two files in the current directory:
 
 With `--lang en`, the prompts and the report page are in English and the models write in English. The language is set by `[review] lang` in the config (`en` or `zh`). A run keeps the same language from start to finish, even if you change the config before resuming it. **Command-line logs and error messages are currently in Chinese only**, as are a few technical notes on failed downloads.
 
-Two kinds of API are supported:
+You can call APIs, or use the subscription of a code agent on your computer:
 
 | type | For | Notes |
 | --- | --- | --- |
 | `anthropic` | Claude | Uses the official Anthropic SDK, with structured output to guarantee the JSON format |
 | `openai_compatible` | OpenAI, Gemini, DeepSeek, and any other service with an OpenAI-compatible API, including a local proxy such as LiteLLM | Uses the official OpenAI SDK; just fill in `base_url` |
+| `claude_code` | A Claude subscription | Runs the local `claude` command (Claude Code); no API key needed, see [below](#use-a-code-agent-subscription) |
+| `codex` | A ChatGPT subscription | Runs the local `codex exec`; no API key needed |
+| `gemini_cli` | The account Gemini CLI is logged in to | Runs the local `gemini` command |
 
 API keys do not go in the config file; only the name of the environment variable does. Set them in your terminal before running:
 
@@ -80,6 +84,37 @@ idea-review check --ping
 
 `--ping` sends a very small request to each model to confirm that the API and the JSON output both work.
 
+### Use a code agent subscription
+
+If you subscribe to Claude or ChatGPT, idea-review can run the Claude Code or Codex installed on your computer instead of calling an API. Install the command-line tool and log in first, then write this in `config.toml`:
+
+```toml
+[providers.claude_sub]
+type = "claude_code"
+model = "sonnet"          # optional; leave out to use Claude Code's default model
+
+[providers.codex_sub]
+type = "codex"            # model is optional; leave out to use Codex's default model
+
+[roles]
+planner = "claude_sub"
+screener = "claude_sub"
+reader = "claude_sub"
+miner = "claude_sub"
+writer = "claude_sub"
+reviewers = ["codex_sub"]
+chair = "codex_sub"
+```
+
+You can also mix them with APIs, e.g. use a subscription for reading and writing and add a reviewer from another company through its API.
+
+- No need to set `family`; it defaults to `anthropic`, `openai` and `google` respectively.
+- The environment variables `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY` are removed for these calls, so the tools do not switch to API billing.
+- Each call starts a fresh session in an empty temporary folder and does not read your project files. Claude Code runs with all tools turned off and without loading your settings. Codex runs in a read-only sandbox and does not read `~/.codex/config.toml` (so it does not start the MCP servers you configured on every call); set `model` in the idea-review config to choose a model.
+- By default at most 2 calls run at once per model (`concurrency`), and each call waits at most 900 seconds (`timeout`); both can be changed in the config.
+- Subscriptions have usage limits. A full run makes dozens of model calls, and Codex adds its own system prompt of about 20,000 tokens to every call, so it uses up the quota faster than the API would.
+- `gemini_cli` follows Gemini CLI's documentation but has not been run end to end yet. If Gemini CLI is set up with an API key, it is still billed as API usage.
+
 ## Usage
 
 ```bash
@@ -94,6 +129,7 @@ Common options:
 - `--papers-dir folder`: hand over PDFs you have already downloaded. These papers are always read.
 - `--idea-file idea.txt`: put a longer idea in a file.
 - `--resume runs/some-run`: continue a run that stopped halfway, or after changing the config. Finished steps are read from their saved results, so you do not pay for them again. You can add `--refs` and `--candidates` at the same time to raise the numbers; see the next section.
+- `--force`: by default the program stops after step 5 when too few full texts were read or all are low quality; with this it carries on. See [When the evidence is not enough](#when-the-evidence-is-not-enough).
 - `--config config.mock.toml`: a free trial run. Use it together with `--query`:
 
   ```bash
@@ -106,7 +142,7 @@ Common options:
 idea-review run "your idea" --refs 25 --candidates 120
 ```
 
-- **Papers read in full** (`--refs`, 1–50): the number of papers whose full text is actually obtained and read. Papers are queued by the screening result, high relevance first, then medium; low-relevance papers are not downloaded. If a download fails (a dead link, or a login page instead of a PDF), the next paper takes its place, until the number is reached or the high- and medium-relevance candidates run out. Local PDFs from `--papers-dir` are counted separately and do not use up this quota.
+- **Papers read in full** (`--refs`, 1–50): the number of papers whose full text is actually obtained and read. Papers are queued by the screening result, high relevance first, then medium; low-relevance papers are not downloaded. If a download fails (a dead link, or a login page instead of a PDF), the next paper takes its place. For papers without a PDF link in the search results, the program looks for an arXiv preprint by title once. If all high- and medium-relevance candidates have been tried and the number is still not reached, more candidates are taken from the search results saved during the first search, screened and downloaded, up to 3 times the number of candidates; the report notes how many were added. Local PDFs from `--papers-dir` are counted separately and do not use up this quota.
 - **Candidates** (`--candidates`, 5–300): after merging, deduplicating and rough ranking, the top N search results go on to screening. Screening only looks at titles and abstracts, so it is fairly cheap.
 - The number read in full cannot exceed the number of candidates. If a number is out of range, or the config has something other than an integer, the program stops with an error that says where to fix it.
 - The numbers used are written to `meta.json` in the run directory, and the "① Search" section of the report shows the setting and the actual count.
@@ -125,6 +161,18 @@ Papers read in full are the most expensive part: each extra paper costs the read
 idea-review run --resume runs/some-run --refs 25
 ```
 
+### When the evidence is not enough
+
+After reading, if fewer than 3 full texts were read (`[review] min_fulltexts`), or all of them are low quality, the program stops after step 5 and does not find gaps or write proposals. Gaps built on so little or such weak literature are unlikely to hold up, and this also saves the money and time of the later steps. The report is still produced, with the papers read so far and those whose full texts were not obtained, and at the top it says why the run stopped and how to add more:
+
+- Add literature: put the papers' PDFs into the run's `papers/` folder, named by ID, and `--resume` (see [Output](#output)). Once there are enough, the run continues.
+- If the search itself returned too few papers: start a new run with different queries (`--query`) or a larger `search.per_query`.
+- If you do want to finish with the literature you have: add `--force` when resuming. The top of the report will warn that the evidence is weak.
+
+If the number read in full is set below the threshold (e.g. `--refs 2`), that number is used as the threshold.
+
+The later steps also scale with the evidence: the maximum number of gaps follows the number of full texts read (at least 3, at most 8); there are never more new directions than gaps; and gaps whose evidence includes no high- or medium-quality paper are marked in the report.
+
 ### Regenerate the report
 
 To regenerate only the report (for example after editing the template):
@@ -140,13 +188,13 @@ Each run gets its own directory, under `runs/` by default:
 ```
 runs/20261031-1540-Use-LLMs-in-place-of/
 ├── report.html          the report
-├── meta.json            the idea, the language and the numbers used
+├── meta.json            the idea, the language, the numbers used, and how many candidates were added automatically
 ├── papers/              downloaded PDFs (P01.pdf …); you can also put PDFs here yourself
 ├── text/                extracted full texts
 ├── history/             old results of steps 6–10, replaced after reading more papers on resume
 ├── 01_plan.json         search plan
 ├── 02_search_results.json all search results after deduplication
-├── 02_candidates.json   candidates (the top N of all search results)
+├── 02_candidates.json   candidates (the top N of all search results, plus any added automatically when full texts were short)
 ├── 03_screen.json       screening results
 ├── 04_fulltext.json     full-text download status
 ├── 05_reviews.json      reading notes and quality ratings
@@ -183,8 +231,8 @@ The English prompts for each step are in `src/idea_review/prompts/en/`, one file
 | --- | --- |
 | `plan_queries.md` | Plan search queries |
 | `screen.md` | Screen by abstract |
-| `read_paper.md` | Read full texts, rate quality, check abstract against body (in two kinds: "overclaims or contradictions" and "scope left out") |
-| `mine_gaps.md` | Map the landscape, find gaps |
+| `read_paper.md` | Read full texts, rate quality (decide the paper type first, then judge by the standard for that type), check abstract against body (in two kinds: "overclaims or contradictions" and "scope left out") |
+| `mine_gaps.md` | Map the landscape, find gaps (`$max_gaps` is the maximum number of gaps, filled in by the program from the number of full texts read) |
 | `seeds.md` | Mine new directions |
 | `write_proposal.md` | Write proposals (Model A) |
 | `meta_review.md` | Meta review (Models B, C, D…) |
@@ -194,9 +242,9 @@ Text the program itself splices into the prompts (paper information, note digest
 
 ## Cost and time
 
-With the default config (15 full texts, 4 proposals, 3 reviewer models), as a rough estimate the reading and writing model uses a bit over 300,000 input tokens, and each reviewer model about 100,000. Actual usage is listed in the report's appendix. A full run usually takes ten-odd minutes to half an hour, mostly spent on search rate limits and reading.
+With the default config (15 full texts, 4 proposals, 3 reviewer models), as a rough estimate the reading and writing model uses a bit over 300,000 input tokens, and each reviewer model about 100,000. Actual usage is listed in the report's appendix. A full run usually takes ten-odd minutes to half an hour, mostly spent on search rate limits and waiting for the models; the log records how long each step took.
 
-To save money, switch `screener` and `planner` to cheaper models, or lower the number read in full (`--refs` or `search.download`) and `review.ideas`.
+To save money, switch `screener` and `planner` to cheaper models, lower the number read in full (`--refs` or `search.download`) and `review.ideas`, or use a [subscription](#use-a-code-agent-subscription) instead. When the evidence is not enough the program stops after step 5, so the most expensive steps, writing proposals and reviewing them, are not wasted.
 
 ## Notes
 

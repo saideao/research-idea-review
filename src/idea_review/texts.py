@@ -33,8 +33,10 @@ ZH = {
     "abstract_missing": "（没有单独的摘要，见全文开头）",
     "truncated": "（太长，中间有省略）",
     # 精读笔记摘要
+    "paper_types": {"empirical": "方法或实证研究", "survey": "综述", "position": "立场或观点文章",
+                    "resource": "数据集、基准或工具", "theory": "理论分析", "other": "其他"},
     "review_digest": (
-        "{line} 质量档位：{tier}\n"
+        "{line} 类型：{kind}；质量档位：{tier}\n"
         "  实际做了什么：{does}\n"
         "  方法：{method}\n"
         "  实验设置：{setup}\n"
@@ -114,8 +116,10 @@ EN = {
     "manual_note": "PDF you put into papers/",
     "abstract_missing": "(no separate abstract; see the start of the full text)",
     "truncated": " (too long; the middle is omitted)",
+    "paper_types": {"empirical": "method or empirical study", "survey": "survey", "position": "position or opinion paper",
+                    "resource": "dataset, benchmark or tool", "theory": "theoretical analysis", "other": "other"},
     "review_digest": (
-        "{line} Quality tier: {tier}\n"
+        "{line} Type: {kind}; quality tier: {tier}\n"
         "  What it actually does: {does}\n"
         "  Method: {method}\n"
         "  Setup: {setup}\n"

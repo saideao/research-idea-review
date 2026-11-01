@@ -37,6 +37,18 @@
     {% if warnings %}
     <div class="warn"><b>Note</b><ul class="tight">{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>
     {% endif %}
+    {% if shortfall %}{% set why %}{% if shortfall.reason == "few" %}Only {{ shortfall.read }} full text{{ "" if shortfall.read == 1 else "s" }} read, fewer than {{ shortfall.need }}{% else %}All {{ shortfall.read }} full texts read are low quality{% endif %}{% endset %}
+    {% if stopped %}
+    <div class="warn"><b>Not enough evidence in the literature; stopped after step 5</b>
+      <p style="margin:6px 0">{{ why }}. Gaps and proposals built on so little or such weak literature are unlikely to hold up, so the later steps were not run. To add more:</p>
+      <ul class="tight">
+        <li>Download the papers listed under "Highly relevant, but not read in full", name each by its ID, put them in <code>{{ run_dir }}/papers/</code>, then run <code>idea-review run --resume {{ run_dir }}</code>.</li>
+        <li>If the search itself returned too few papers, start a new run with different queries (<code>--query</code>) or a larger <code>search.per_query</code>.</li>
+        <li>If you do want to finish with the literature you have, add <code>--force</code> when resuming.</li>
+      </ul></div>
+    {% else %}
+    <div class="warn"><b>Weak evidence in the literature</b>: {{ why }}. Treat the gaps and proposals below only as leads, and add more literature before drawing conclusions.</div>
+    {% endif %}{% endif %}
   </div>
 </header>
 
@@ -56,7 +68,7 @@
     <div class="chips">{% for c in plan.core_concepts %}<span class="chip">{{ c }}</span>{% endfor %}</div>
     <div class="kv"><b>Queries</b></div>
     <ul class="tight">{% for q in plan.search_queries %}<li><code>{{ q }}</code></li>{% endfor %}</ul>
-    <div class="meta">Sources: {{ cfg.search.sources | join(", ") }}. Papers are first screened by title and abstract; full texts are then downloaded and read in order of relevance, and a failed download is replaced by the next paper.</div>
+    <div class="meta">Sources: {{ cfg.search.sources | join(", ") }}. Papers are first screened by title and abstract; full texts are then downloaded and read in order of relevance, and a failed download is replaced by the next paper; if the downloadable candidates run out before the number is reached, more candidates are taken from the search results.</div>
     <h4>Number of references</h4>
     <table>
       <tr><th></th><th>Setting</th><th>Actual</th></tr>
@@ -76,7 +88,7 @@
 
 <section id="papers">
   <h2>② Papers</h2>
-  <p class="lead">"Quality" is the model's judgment after reading the full text, based only on the paper's own evidence; "peer-reviewed / preprint" comes from the search metadata. Where an abstract overclaims or contradicts the body, go by the body; scope an abstract leaves out is also listed in the notes.</p>
+  <p class="lead">"Quality" is the model's judgment after reading the full text, based only on the paper's own evidence and judged by paper type: surveys by coverage and synthesis, position papers by argument, datasets and tools by construction and quality control, so a paper is not rated low just for having no experiments. "Peer-reviewed / preprint" comes from the search metadata. Where an abstract overclaims or contradicts the body, go by the body; scope an abstract leaves out is also listed in the notes.</p>
   {% if read %}
   <div class="table-wrap"><table>
     <thead><tr><th>ID</th><th>Paper</th><th>Year</th><th>Venue</th><th class="num">Cited</th><th>Quality</th><th>Abstract vs. body</th></tr></thead>
@@ -88,7 +100,7 @@
         <td class="num">{{ p.year or "—" }}</td>
         <td>{{ pubbadge(p) }} <span class="meta">{{ p.venue or "" }}</span></td>
         <td class="num">{{ p.citation_count if p.citation_count is not none else "—" }}</td>
-        <td>{{ level(r.quality.tier) }}</td>
+        <td>{{ level(r.quality.tier) }}{% if r.quality.paper_type != "other" %} <span class="meta">{{ PAPER_TYPE[r.quality.paper_type] }}</span>{% endif %}</td>
         <td>{% if not r.abstract_vs_body.consistent %}<span class="badge b-warn">Overclaims</span>
           {%- elif r.abstract_vs_body.scope_gaps %}<span class="meta">Scope left out</span>
           {%- else %}<span class="meta">Consistent</span>{% endif %}</td>
@@ -103,7 +115,7 @@
     <summary>
       <span class="ref">{{ p.paper_id }}</span> <span class="title">{{ p.title }}</span><br>
       <span class="meta">{{ p.year or "Year unknown" }} · {{ p.venue or "Venue unknown" }} · </span>{{ pubbadge(p) }}
-      Quality {{ level(r.quality.tier) }}
+      Quality {{ level(r.quality.tier) }}{% if r.quality.paper_type != "other" %} <span class="meta">· {{ PAPER_TYPE[r.quality.paper_type] }}</span>{% endif %}
       {% if not r.abstract_vs_body.consistent %}<span class="badge b-warn">Abstract overclaims or contradicts the body</span>{% endif %}
       {% if x.truncated %}<span class="badge b-unk">Full text too long; middle omitted</span>{% endif %}
     </summary>
@@ -128,7 +140,7 @@
           <h4>Key results</h4>{{ plist(r.key_results) }}
         </div>
         <div>
-          <h4>Quality: {{ level(r.quality.tier) }}</h4>
+          <h4>Quality: {{ level(r.quality.tier) }}{% if r.quality.paper_type != "other" %} ({{ PAPER_TYPE[r.quality.paper_type] }}){% endif %}</h4>
           <div class="meta">{{ r.quality.tier_reason | refs }}</div>
           <div class="kv"><b>Evidence</b>{{ level(r.quality.evidence_strength) }} &nbsp; <b>Reproducibility</b>{{ level(r.quality.reproducibility) }}</div>
           <h4>Rigor</h4>{{ plist(r.quality.rigor) }}
@@ -194,7 +206,8 @@
   <h3>Gaps</h3>
   {% for g in landscape.gaps %}
   <div class="card gap-card" id="gap-G{{ loop.index }}">
-    <div class="meta">G{{ loop.index }} · {{ KIND.get(g.kind, g.kind) }} · {% if g.source == "authors_admit" %}admitted by the authors{% else %}inferred by the model{% endif %}</div>
+    <div class="meta">G{{ loop.index }} · {{ KIND.get(g.kind, g.kind) }} · {% if g.source == "authors_admit" %}admitted by the authors{% else %}inferred by the model{% endif %}
+      {%- if loop.index in weak_gaps %} <span class="badge b-warn">Not backed by any high- or medium-quality paper</span>{% endif %}</div>
     <h3 style="margin-top:4px">{{ g.title }}</h3>
     <div>{{ g.description | refs }}</div>
     <h4>Evidence</h4>
@@ -203,7 +216,7 @@
     <div class="kv"><b>Already-done risk</b>{{ g.already_done_risk | refs }}</div>
   </div>
   {% endfor %}
-  {% else %}<p class="meta">This step has not finished yet.</p>{% endif %}
+  {% else %}<p class="meta">{% if stopped %}Not enough evidence in the literature; this step was not run. See the note at the top of the page.{% else %}This step has not finished yet.{% endif %}</p>{% endif %}
 </section>
 
 <section id="proposals">
@@ -277,7 +290,7 @@
     </div>
     {% else %}<p class="error">This proposal was not written: {{ rec.error }}</p>{% endif %}
   </div>
-  {% else %}<p class="meta">This step has not finished yet.</p>{% endfor %}
+  {% else %}<p class="meta">{% if stopped %}Not enough evidence in the literature; this step was not run. See the note at the top of the page.{% else %}This step has not finished yet.{% endif %}</p>{% endfor %}
 </section>
 
 <section id="decide">

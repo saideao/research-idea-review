@@ -2,13 +2,20 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from .texts import LANGS
 
-PROVIDER_TYPES = ("anthropic", "openai_compatible", "mock")
+PROVIDER_TYPES = ("anthropic", "openai_compatible", "claude_code", "codex", "gemini_cli", "mock")
+# 调用本机 code agent 命令行、走它登录的订阅的几种类型：默认命令名和默认 family
+AGENT_CLIS = {
+    "claude_code": ("claude", "anthropic"),
+    "codex": ("codex", "openai"),
+    "gemini_cli": ("gemini", "google"),
+}
 ROLE_NAMES = ("planner", "screener", "reader", "miner", "writer", "chair")
 # 检索数量的上下限：太少做不成调研，太多费用和时间会翻好几倍
 COUNT_LIMITS = {
@@ -39,17 +46,24 @@ class ProviderConfig:
     max_tokens_param: str = "max_tokens"
     extra_body: dict = field(default_factory=dict)
     concurrency: int = 4
+    # claude_code / codex / gemini_cli：命令路径（不填就用默认命令名）和每次调用最多等多少秒
+    command: str | None = None
+    timeout: int = 900
 
     def api_key(self) -> str | None:
         if not self.api_key_env:
             return None
         return os.environ.get(self.api_key_env) or None
 
+    def executable(self) -> str:
+        return self.command or AGENT_CLIS[self.type][0]
+
     def describe(self, lang: str = "zh") -> str:
         where = f" @ {self.base_url}" if self.base_url else ""
+        model = self.model or ("default model" if lang == "en" else "默认模型")
         if lang == "en":
-            return f"{self.name} ({self.type}, {self.model}{where})"
-        return f"{self.name}（{self.type}，{self.model}{where}）"
+            return f"{self.name} ({self.type}, {model}{where})"
+        return f"{self.name}（{self.type}，{model}{where}）"
 
 
 @dataclass
@@ -79,6 +93,7 @@ class ReviewConfig:
     ideas: int = 4
     lang: str = "zh"                 # 提示词和报告用哪个版本：zh / en
     language: str | None = None      # 模型用什么语言写，不填就跟 lang 一致
+    min_fulltexts: int = 3           # 读到的全文少于这个数，或者全是低质量，就不往下找空白、写 proposal
     max_fulltext_chars: int = 60000
     reviewer_fulltext_papers: int = 3
     reviewer_fulltext_chars: int = 15000
@@ -116,6 +131,11 @@ class Config:
             out.append("Only one reviewer model is configured. Add more if you can: issues raised by several reviewers are more trustworthy."
                        if en else "只配了一个评审模型。有条件的话多配几家，几家都提到的问题才更可信。")
         for p in self.providers.values():
+            if p.type in AGENT_CLIS:
+                if not shutil.which(p.executable()):
+                    out.append(f"Command {p.executable()} for {p.name} was not found; install it and log in first."
+                               if en else f"{p.name} 要用的命令 {p.executable()} 没找到，先安装并登录。")
+                continue
             if p.type != "mock" and p.api_key_env and not p.api_key():
                 out.append(f"Environment variable {p.api_key_env} for {p.name} is not set; steps that use it will fail."
                            if en else f"{p.name} 的环境变量 {p.api_key_env} 没有设置，用到它的环节会失败。")
@@ -126,7 +146,7 @@ def _provider(name: str, raw: dict) -> ProviderConfig:
     ptype = raw.get("type")
     if ptype not in PROVIDER_TYPES:
         raise ConfigError(f"providers.{name}.type 必须是 {PROVIDER_TYPES} 之一，现在是 {ptype!r}")
-    if not raw.get("model"):
+    if not raw.get("model") and ptype not in AGENT_CLIS:
         raise ConfigError(f"providers.{name} 缺少 model")
     if ptype == "openai_compatible" and not raw.get("base_url"):
         raise ConfigError(f"providers.{name} 是 openai_compatible，需要填 base_url")
@@ -135,7 +155,16 @@ def _provider(name: str, raw: dict) -> ProviderConfig:
     if unknown:
         raise ConfigError(f"providers.{name} 里有不认识的字段：{sorted(unknown)}")
     data = dict(raw)
+    if ptype in AGENT_CLIS:
+        # 不填 model 就用命令行工具自己的默认模型；本机同时开太多个 agent 容易卡，也容易撞上订阅的频率限制
+        data.setdefault("model", "")
+        data.setdefault("family", AGENT_CLIS[ptype][1])
+        data.setdefault("concurrency", 2)
     data.setdefault("family", name)
+    for key in ("concurrency", "timeout"):
+        value = data.get(key, 1)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ConfigError(f"providers.{name}.{key} 要填正整数，现在是 {value!r}")
     return ProviderConfig(name=name, **data)
 
 
@@ -192,5 +221,7 @@ def load_config(path: str | Path) -> Config:
     review = _section(ReviewConfig, "review", raw.get("review", {}))
     if review.lang not in LANGS:
         raise ConfigError(f"review.lang 要填 {' 或 '.join(LANGS)}，现在是 {review.lang!r}")
+    if isinstance(review.min_fulltexts, bool) or not isinstance(review.min_fulltexts, int) or not 1 <= review.min_fulltexts <= 50:
+        raise ConfigError(f"review.min_fulltexts 要填 1 到 50 之间的整数，现在是 {review.min_fulltexts!r}")
     review.language = review.language or ("English" if review.lang == "en" else "中文")
     return Config(path=path, providers=providers, roles=roles, search=search, review=review)

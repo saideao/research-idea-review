@@ -6,7 +6,8 @@ Requirements:
 - Every gap needs evidence from the papers: give the paper ID and the relevant part (with page numbers). Do not present a guess without evidence as a gap.
 - Mark whether each gap is admitted by the paper's authors (authors_admit) or inferred by you (inferred).
 - Assess the risk that each gap "may already have been done". You have only read the papers below; not having read it does not mean nobody has done it.
-- Papers with quality tier low have weaker evidence. You may consult them, but do not build an argument on them alone.
+- Papers with quality tier low have weaker evidence. You may consult them, but do not build an argument on them alone. If a gap rests only on low-quality papers, say so in its description.
+- List at most $max_gaps gaps, ordered from most to least important. With few papers read there should be few gaps; fewer solid gaps are better than many weak ones.
 - Write in $language.
 ---USER---
 Research idea:

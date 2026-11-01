@@ -65,6 +65,9 @@ async def search_semantic_scholar(client: httpx.AsyncClient, query: str, limit: 
         pdfs = []
         if (item.get("openAccessPdf") or {}).get("url"):
             pdfs.append(item["openAccessPdf"]["url"])
+        if ext.get("ACL"):
+            # ACL Anthology 的论文都公开，Semantic Scholar 常常没挂 PDF 链接
+            pdfs.append(f"https://aclanthology.org/{ext['ACL']}.pdf")
         papers.append(Paper(
             title=item["title"].strip(),
             authors=[a.get("name", "") for a in item.get("authors") or []][:12],
@@ -113,6 +116,26 @@ async def search_arxiv(client: httpx.AsyncClient, query: str, limit: int) -> lis
             sources=["arxiv"],
         ))
     return papers
+
+
+async def lookup_arxiv_id(client: httpx.AsyncClient, title: str) -> str | None:
+    """按标题去 arXiv 找同一篇论文的预印本。很多会议和期刊论文有 arXiv 版本，但检索结果里没挂这个链接。
+    标题去掉标点和大小写后完全一样才算，宁可漏掉也不拿错论文。"""
+    words = re.findall(r"[A-Za-z0-9]+", title)
+    if len(words) < 3:
+        return None
+    await asyncio.sleep(3)  # arXiv 要求两次请求间隔 3 秒
+    try:
+        resp = await _get(client, "https://export.arxiv.org/api/query",
+                          {"search_query": f'ti:"{" ".join(words)}"', "max_results": 5}, tries=2)
+        root = ET.fromstring(resp.text)
+    except (httpx.HTTPError, ET.ParseError):
+        return None
+    want = _norm_title(title)
+    for entry in root.findall("a:entry", ARXIV_NS):
+        if _norm_title(entry.findtext("a:title", "", ARXIV_NS) or "") == want:
+            return _norm_arxiv(entry.findtext("a:id", "", ARXIV_NS))
+    return None
 
 
 def _openalex_abstract(inverted: dict | None) -> str | None:

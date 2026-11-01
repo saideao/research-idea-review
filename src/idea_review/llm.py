@@ -3,6 +3,7 @@
 - anthropic：用官方 anthropic SDK，output_config.format 约束 JSON 结构。
 - openai_compatible：用官方 openai SDK + base_url，适用于 OpenAI、Gemini、DeepSeek、
   Kimi、通义千问、智谱 GLM、豆包等提供 OpenAI 兼容接口的服务。
+- claude_code / codex / gemini_cli：调用本机装好的 code agent 命令行，用它登录的订阅，不需要 API key。
 - mock：不联网，按 JSON Schema 造假数据，用来试跑流程和测试。
 """
 from __future__ import annotations
@@ -10,15 +11,18 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TypeVar
 
 import anthropic
 import openai
 from pydantic import BaseModel, ValidationError
 
-from .config import ProviderConfig
+from .config import AGENT_CLIS, ProviderConfig
 from .schemas import DESCRIPTIONS_EN
 from .texts import TEXTS
 
@@ -214,8 +218,130 @@ class OpenAICompatibleProvider(Provider):
         return choice.message.content or ""
 
 
+class AgentCLIProvider(Provider):
+    """调用本机装好的 code agent 命令行（Claude Code、Codex、Gemini CLI），用它登录的订阅，不需要 API key。
+
+    每次调用都在一个空的临时目录里新开一次会话，不加载项目文件、插件和 MCP，只要它按 JSON 格式回答。
+    """
+    # 这些环境变量在的话，命令行工具会改用 API key 计费，调用时去掉
+    API_KEY_ENVS = {
+        "claude_code": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
+        "codex": ("OPENAI_API_KEY", "CODEX_API_KEY"),
+        "gemini_cli": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    }
+
+    async def _complete(self, system: str, user: str, schema: dict, schema_name: str, lang: str) -> str:
+        with tempfile.TemporaryDirectory(prefix="idea-review-") as tmp:
+            work = Path(tmp)
+            if self.cfg.type == "claude_code":
+                return self._parse_claude(*await self._run(self._claude_args(system, schema), user, work))
+            if self.cfg.type == "codex":
+                schema_path, answer = work / "schema.json", work / "answer.txt"
+                schema_path.write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
+                # codex 没有单独的 system 参数，拼在前面
+                result = await self._run(self._codex_args(work, schema_path, answer), f"{system}\n\n{user}", work)
+                return self._parse_codex(*result, answer)
+            prompt = (f"{system}\n\n{user}\n\n---\n{TEXTS[lang]['json_instruction'].format(name=schema_name)}\n"
+                      f"{json.dumps(schema, ensure_ascii=False)}")
+            return self._parse_gemini(*await self._run(self._gemini_args(), prompt, work))
+
+    def _claude_args(self, system: str, schema: dict) -> list[str]:
+        args = [self.cfg.executable(), "-p", "--output-format", "json", "--system-prompt", system,
+                "--json-schema", json.dumps(schema, ensure_ascii=False),
+                "--tools", "", "--setting-sources", "", "--no-session-persistence"]
+        if self.cfg.model:
+            args += ["--model", self.cfg.model]
+        if self.cfg.effort:
+            args += ["--effort", self.cfg.effort]
+        return args
+
+    def _codex_args(self, work: Path, schema_path: Path, answer: Path) -> list[str]:
+        # 不读 ~/.codex/config.toml：免得每次调用都启动你配置的 MCP 服务。模型在 idea-review 的配置里用 model 指定
+        args = [self.cfg.executable(), "exec", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules",
+                "--sandbox", "read-only", "-C", str(work), "--output-schema", str(schema_path), "-o", str(answer), "--json"]
+        if self.cfg.model:
+            args += ["-m", self.cfg.model]
+        if self.cfg.effort:
+            args += ["-c", f'model_reasoning_effort="{self.cfg.effort}"']
+        return args + ["-"]
+
+    def _gemini_args(self) -> list[str]:
+        args = [self.cfg.executable(), "-p", "", "-o", "json", "--skip-trust", "--approval-mode", "plan"]
+        if self.cfg.model:
+            args += ["-m", self.cfg.model]
+        return args
+
+    async def _run(self, args: list[str], stdin: str, cwd: Path) -> tuple[str, str, int]:
+        env = {k: v for k, v in os.environ.items() if k not in self.API_KEY_ENVS[self.cfg.type]}
+        try:
+            proc = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=env, stdin=asyncio.subprocess.PIPE,
+                                                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        except FileNotFoundError as e:
+            raise LLMError(f"{self.name}：找不到命令 {args[0]}。先安装并登录，或者在配置里用 command 写明路径") from e
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(stdin.encode("utf-8")), self.cfg.timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise LLMError(f"{self.name} 超过 {self.cfg.timeout} 秒没有返回，可以在配置里调大 timeout") from None
+        return out.decode("utf-8", "replace"), err.decode("utf-8", "replace"), proc.returncode
+
+    def _failed(self, what: str, stderr: str, code: int) -> LLMError:
+        return LLMError(f"{self.name} {what}（退出码 {code}）：{stderr.strip()[-500:] or '没有错误信息'}")
+
+    def _parse_claude(self, stdout: str, stderr: str, code: int) -> str:
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            raise self._failed("没有输出预期的 JSON", stderr or stdout, code) from None
+        usage = data.get("usage") or {}
+        model = next(iter(data.get("modelUsage") or {}), self.cfg.model or "claude")
+        self.tracker.add(self.name, model, sum(usage.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens",
+                                                                             "cache_read_input_tokens")), usage.get("output_tokens"))
+        if data.get("is_error"):
+            raise LLMError(f"{self.name} 报错：{str(data.get('result') or data.get('subtype'))[:500]}")
+        if data.get("structured_output") is not None:
+            return json.dumps(data["structured_output"], ensure_ascii=False)
+        return data.get("result") or ""
+
+    def _parse_codex(self, stdout: str, stderr: str, code: int, answer: Path) -> str:
+        usage, errors = {}, []
+        for line in stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("type") == "turn.completed":
+                usage = event.get("usage") or {}
+            elif event.get("type") in ("error", "turn.failed"):
+                errors.append(str(event.get("message") or (event.get("error") or {}).get("message") or event))
+        self.tracker.add(self.name, self.cfg.model or "codex", usage.get("input_tokens"), usage.get("output_tokens"))
+        text = answer.read_text(encoding="utf-8").strip() if answer.exists() else ""
+        if text:
+            return text
+        if errors:
+            raise LLMError(f"{self.name} 报错：{errors[-1][:500]}")
+        raise self._failed("没有给出回答", stderr, code)
+
+    def _parse_gemini(self, stdout: str, stderr: str, code: int) -> str:
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError:
+            raise self._failed("没有输出预期的 JSON", stderr or stdout, code) from None
+        models = (data.get("stats") or {}).get("models") or {}
+        tokens = [m.get("tokens") or {} for m in models.values()]
+        self.tracker.add(self.name, next(iter(models), self.cfg.model or "gemini"),
+                         sum(t.get("prompt") or 0 for t in tokens), sum(t.get("candidates") or 0 for t in tokens))
+        if data.get("error"):
+            raise LLMError(f"{self.name} 报错：{str(data['error'].get('message') or data['error'])[:500]}")
+        return data.get("response") or ""
+
+
 class MockProvider(Provider):
-    """按 schema 造数据，不联网。字段名是 paper_id / paper_ids 时，从提示词里挑论文编号。"""
+    """按 schema 造数据，不联网。字段名是 paper_id / paper_ids 时，从提示词里挑论文编号。
+    精读的质量档位固定给 tier（测试里可以改）。"""
+
+    tier = "medium"
 
     async def _complete(self, system: str, user: str, schema: dict, schema_name: str, lang: str) -> str:
         ids = list(dict.fromkeys(re.findall(r"\b([PL]\d{2,3})\b", user))) or ["P01"]
@@ -223,6 +349,8 @@ class MockProvider(Provider):
         counter = [0]
 
         def make(node: dict, key: str = ""):
+            if key == "tier":
+                return self.tier
             if "$ref" in node:
                 return make(defs[node["$ref"].split("/")[-1]], key)
             if "anyOf" in node:
@@ -263,6 +391,8 @@ def make_provider(cfg: ProviderConfig, tracker: UsageTracker) -> Provider:
         return AnthropicProvider(cfg, tracker)
     if cfg.type == "openai_compatible":
         return OpenAICompatibleProvider(cfg, tracker)
+    if cfg.type in AGENT_CLIS:
+        return AgentCLIProvider(cfg, tracker)
     return MockProvider(cfg, tracker)
 
 

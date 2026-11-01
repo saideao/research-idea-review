@@ -10,11 +10,12 @@ from markupsafe import Markup, escape
 
 from . import prompts
 from .config import Config
-from .pipeline import RunStore
+from .pipeline import RunStore, evidence_need, evidence_shortfall
 from .schemas import (
     ChairRecord, FullText, IdeaSeeds, Landscape, MetaReviewRecord, Paper, ProposalRecord, QueryPlan,
     ReviewRecord, ScreenItem,
 )
+from .texts import TEXTS
 
 _REF = re.compile(r"\b([PL]\d{2,3})\b")
 _GAP = re.compile(r"\b(G\d{1,2})\b")
@@ -47,12 +48,13 @@ KIND = {
 COUNT_NOTES = {
     "zh": {"few_candidates": "检索结果去重后只有这么多", "kept_candidates": "调小数量不会删掉已有的候选",
            "manual": "含你手动放进 papers/ 的 {n} 篇", "few_fulltexts": "高、中相关又能下载到全文的只有这么多",
-           "kept_fulltexts": "调小数量不会删掉已经读过的"},
+           "kept_fulltexts": "调小数量不会删掉已经读过的", "expanded": "全文不够，自动从检索结果里多取了 {n} 篇"},
     "en": {"few_candidates": "that is all the search returned after deduplication",
            "kept_candidates": "lowering the number does not remove existing candidates",
            "manual": "includes {n} you put into papers/",
            "few_fulltexts": "that is all the high- and medium-relevance papers with downloadable full texts",
-           "kept_fulltexts": "lowering the number does not remove papers already read"},
+           "kept_fulltexts": "lowering the number does not remove papers already read",
+           "expanded": "{n} more were taken from the search results automatically because full texts were short"},
 }
 TEMPLATES = {"zh": "report.html.j2", "en": "report.en.html.j2"}
 
@@ -114,11 +116,14 @@ def build_report(run_dir: Path, cfg: Config) -> Path:
     }
     # 设定的数量和实际对不上时，说明原因
     manual = sum(1 for f in fulltexts.values() if f.status == "ok" and f.manual)
+    expanded = meta.get("expanded", 0)
     notes = COUNT_NOTES[lang]
     count_notes = {"candidates": [], "fulltext": []}
+    if expanded:
+        count_notes["candidates"].append(notes["expanded"].format(n=expanded))
     if stats["candidates"] < counts["max_candidates"]:
         count_notes["candidates"].append(notes["few_candidates"])
-    elif stats["candidates"] > counts["max_candidates"]:
+    elif stats["candidates"] - expanded > counts["max_candidates"]:
         count_notes["candidates"].append(notes["kept_candidates"])
     if manual:
         count_notes["fulltext"].append(notes["manual"].format(n=manual))
@@ -127,12 +132,20 @@ def build_report(run_dir: Path, cfg: Config) -> Path:
     elif stats["fulltext"] - manual > counts["download"]:
         count_notes["fulltext"].append(notes["kept_fulltexts"])
 
+    # 读到的全文太少或者全是低质量：没找空白的说明停在了第 5 步，加 --force 跑完的提醒证据偏弱
+    shortfall = evidence_shortfall(reviews, evidence_need(cfg.review.min_fulltexts, counts["download"]))
+    # 证据里没有一篇高、中质量全文的空白，单独标出来
+    strong_ids = {x["paper"].paper_id for x in read if x["review"].quality.tier in ("high", "medium")}
+    weak_gaps = {i for i, g in enumerate(landscape.gaps, start=1)
+                 if not any(e.paper_id in strong_ids for e in g.evidence)} if landscape else set()
+
     env = Environment(loader=PackageLoader("idea_review", "templates"), autoescape=select_autoescape(["html", "j2"]))
     env.filters["refs"] = refs
-    env.globals.update(LEVEL=LEVEL[lang], KIND=KIND[lang], lang=lang)
+    env.globals.update(LEVEL=LEVEL[lang], KIND=KIND[lang], PAPER_TYPE=TEXTS[lang]["paper_types"], lang=lang)
     html = env.get_template(TEMPLATES[lang]).render(
         meta=meta, idea=meta.get("idea", ""), plan=plan, stats=stats, counts=counts, count_notes=count_notes, read=read, failed_reads=failed_reads,
         missing=missing, others=others, landscape=landscape, seeds=seeds, proposals=proposal_views,
+        shortfall=shortfall, stopped=bool(shortfall and not landscape), weak_gaps=weak_gaps,
         cfg=cfg, warnings=cfg.warnings(lang), usage=usage, run_dir=str(run_dir.resolve()),
         prompt_texts=[(n, prompts.raw(n, lang)) for n in prompts.NAMES],
     )

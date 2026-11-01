@@ -37,6 +37,18 @@
     {% if warnings %}
     <div class="warn"><b>注意</b><ul class="tight">{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>
     {% endif %}
+    {% if shortfall %}{% set why %}{% if shortfall.reason == "few" %}只读到 {{ shortfall.read }} 篇全文，少于 {{ shortfall.need }} 篇{% else %}读到的 {{ shortfall.read }} 篇全文都是低质量{% endif %}{% endset %}
+    {% if stopped %}
+    <div class="warn"><b>文献证据不够，停在了第 5 步</b>
+      <p style="margin:6px 0">{{ why }}。拿这么少或这么弱的文献去找空白、写 proposal，结果多半站不住，所以后面几步没有跑。可以这样补：</p>
+      <ul class="tight">
+        <li>把下面"很相关，但没读到全文"里的论文下载下来，按编号放进 <code>{{ run_dir }}/papers/</code>，再运行 <code>idea-review run --resume {{ run_dir }}</code>。</li>
+        <li>检索结果本身太少的话，换几条检索式（<code>--query</code>）或者调大 <code>search.per_query</code>，开一次新的运行。</li>
+        <li>确实想用现有的文献跑完，接着跑时加 <code>--force</code>。</li>
+      </ul></div>
+    {% else %}
+    <div class="warn"><b>文献证据偏弱</b>：{{ why }}。下面的空白和 proposal 只能当线索，先多补几篇文献再下判断。</div>
+    {% endif %}{% endif %}
   </div>
 </header>
 
@@ -56,7 +68,7 @@
     <div class="chips">{% for c in plan.core_concepts %}<span class="chip">{{ c }}</span>{% endfor %}</div>
     <div class="kv"><b>检索式</b></div>
     <ul class="tight">{% for q in plan.search_queries %}<li><code>{{ q }}</code></li>{% endfor %}</ul>
-    <div class="meta">检索源：{{ cfg.search.sources | join("、") }}。先按标题和摘要初筛，再按相关度从高到低下载全文来精读，下载失败的往下顺延。</div>
+    <div class="meta">检索源：{{ cfg.search.sources | join("、") }}。先按标题和摘要初筛，再按相关度从高到低下载全文来精读，下载失败的往下顺延；候选里能下载的用完了还不够数，会从检索结果里再多取一些候选。</div>
     <h4>参考文献数量</h4>
     <table>
       <tr><th></th><th>设定</th><th>实际</th></tr>
@@ -76,7 +88,7 @@
 
 <section id="papers">
   <h2>② 文献</h2>
-  <p class="lead">"质量"是模型读完全文后的判断，只看论文本身的证据；"已发表 / 预印本"来自检索元数据。摘要夸大或和正文矛盾的论文，结论以正文为准；摘要没交代适用范围的，也在笔记里单独列出。</p>
+  <p class="lead">"质量"是模型读完全文后的判断，只看论文本身的证据；"已发表 / 预印本"来自检索元数据。质量按论文类型分别判断：综述看覆盖和归纳，立场文章看论证，数据集和工具看构建和质量控制，不会因为没做实验就判低。摘要夸大或和正文矛盾的论文，结论以正文为准；摘要没交代适用范围的，也在笔记里单独列出。</p>
   {% if read %}
   <div class="table-wrap"><table>
     <thead><tr><th>编号</th><th>论文</th><th>年份</th><th>出处</th><th class="num">被引</th><th>质量</th><th>摘要和正文</th></tr></thead>
@@ -88,7 +100,7 @@
         <td class="num">{{ p.year or "—" }}</td>
         <td>{{ pubbadge(p) }} <span class="meta">{{ p.venue or "" }}</span></td>
         <td class="num">{{ p.citation_count if p.citation_count is not none else "—" }}</td>
-        <td>{{ level(r.quality.tier) }}</td>
+        <td>{{ level(r.quality.tier) }}{% if r.quality.paper_type != "other" %} <span class="meta">{{ PAPER_TYPE[r.quality.paper_type] }}</span>{% endif %}</td>
         <td>{% if not r.abstract_vs_body.consistent %}<span class="badge b-warn">夸大或矛盾</span>
           {%- elif r.abstract_vs_body.scope_gaps %}<span class="meta">没交代适用范围</span>
           {%- else %}<span class="meta">一致</span>{% endif %}</td>
@@ -103,7 +115,7 @@
     <summary>
       <span class="ref">{{ p.paper_id }}</span> <span class="title">{{ p.title }}</span><br>
       <span class="meta">{{ p.year or "年份不明" }} · {{ p.venue or "出处不明" }} · </span>{{ pubbadge(p) }}
-      质量 {{ level(r.quality.tier) }}
+      质量 {{ level(r.quality.tier) }}{% if r.quality.paper_type != "other" %} <span class="meta">· {{ PAPER_TYPE[r.quality.paper_type] }}</span>{% endif %}
       {% if not r.abstract_vs_body.consistent %}<span class="badge b-warn">摘要夸大或和正文矛盾</span>{% endif %}
       {% if x.truncated %}<span class="badge b-unk">全文过长，中间有省略</span>{% endif %}
     </summary>
@@ -128,7 +140,7 @@
           <h4>主要结果</h4>{{ plist(r.key_results) }}
         </div>
         <div>
-          <h4>质量判断：{{ level(r.quality.tier) }}</h4>
+          <h4>质量判断：{{ level(r.quality.tier) }}{% if r.quality.paper_type != "other" %}（{{ PAPER_TYPE[r.quality.paper_type] }}）{% endif %}</h4>
           <div class="meta">{{ r.quality.tier_reason | refs }}</div>
           <div class="kv"><b>证据强度</b>{{ level(r.quality.evidence_strength) }}　<b>可复现</b>{{ level(r.quality.reproducibility) }}</div>
           <h4>严谨性</h4>{{ plist(r.quality.rigor) }}
@@ -194,7 +206,8 @@
   <h3>空白</h3>
   {% for g in landscape.gaps %}
   <div class="card gap-card" id="gap-G{{ loop.index }}">
-    <div class="meta">G{{ loop.index }} · {{ KIND.get(g.kind, g.kind) }} · {% if g.source == "authors_admit" %}论文作者自己承认{% else %}模型推断{% endif %}</div>
+    <div class="meta">G{{ loop.index }} · {{ KIND.get(g.kind, g.kind) }} · {% if g.source == "authors_admit" %}论文作者自己承认{% else %}模型推断{% endif %}
+      {%- if loop.index in weak_gaps %} <span class="badge b-warn">没有高、中质量的论文支撑</span>{% endif %}</div>
     <h3 style="margin-top:4px">{{ g.title }}</h3>
     <div>{{ g.description | refs }}</div>
     <h4>证据</h4>
@@ -203,7 +216,7 @@
     <div class="kv"><b>撞车风险</b>{{ g.already_done_risk | refs }}</div>
   </div>
   {% endfor %}
-  {% else %}<p class="meta">这一步还没完成。</p>{% endif %}
+  {% else %}<p class="meta">{% if stopped %}文献证据不够，这一步没有跑，见页面顶部的说明。{% else %}这一步还没完成。{% endif %}</p>{% endif %}
 </section>
 
 <section id="proposals">
@@ -277,7 +290,7 @@
     </div>
     {% else %}<p class="error">这份 proposal 没写出来：{{ rec.error }}</p>{% endif %}
   </div>
-  {% else %}<p class="meta">这一步还没完成。</p>{% endfor %}
+  {% else %}<p class="meta">{% if stopped %}文献证据不够，这一步没有跑，见页面顶部的说明。{% else %}这一步还没完成。{% endif %}</p>{% endfor %}
 </section>
 
 <section id="decide">

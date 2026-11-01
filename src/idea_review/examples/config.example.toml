@@ -73,6 +73,27 @@ max_tokens = 8000
 # api_key_env = "ARK_API_KEY"
 # family = "bytedance"
 
+# 不用 API，用本机 code agent 的订阅：先装好对应的命令行工具并登录，不需要 API Key。
+# 每次调用都在一个空的临时目录里新开会话，不读你的项目文件。model 不填就用工具自己的默认模型。
+
+# [providers.claude_sub]
+# type = "claude_code"             # 调用 claude 命令（Claude Code），用你登录的 Claude 订阅
+# model = "sonnet"                 # 可选：sonnet / opus / haiku 或完整模型名
+# effort = "medium"                # 可选：思考深度
+# family = "anthropic"
+# concurrency = 2                  # 同时开几个，开太多容易撞上订阅的频率限制
+# timeout = 900                    # 每次调用最多等多少秒
+
+# [providers.codex_sub]
+# type = "codex"                   # 调用 codex exec，用你登录的 ChatGPT 订阅
+# model = "填 Codex 里能用的模型名"   # 可选。不读 ~/.codex/config.toml，要指定模型就写在这里
+# effort = "medium"                # 可选：思考深度
+# family = "openai"
+
+# [providers.gemini_sub]
+# type = "gemini_cli"              # 调用 gemini 命令（Gemini CLI），用它登录的账号
+# family = "google"
+
 [roles]
 planner = "claude"                 # 拆检索词
 screener = "claude"                # 按标题和摘要初筛（只决定先读哪些全文）
@@ -87,7 +108,8 @@ sources = ["semantic_scholar", "arxiv", "openalex"]
 per_query = 20                     # 每条检索式、每个来源取多少篇（1–100），只在第一次检索时用
 max_candidates = 80                # 候选篇数：合并去重后留多少篇去初筛（5–300）。运行时可以用 --candidates N 覆盖
 download = 15                      # 精读篇数：下载全文并逐篇精读多少篇（1–50，不能多于候选篇数）。
-                                   # 下载失败的往下顺延，直到够数或高、中相关的候选用完。运行时可以用 --refs N 覆盖
+                                   # 下载失败的往下顺延；候选里能下载的用完了还不够，自动从检索结果里多取候选，
+                                   # 最多扩到候选篇数的 3 倍。运行时可以用 --refs N 覆盖
 # year_from = 2020                 # 只看这一年以后的论文
 # openalex_mailto = "you@example.com"   # 可选，OpenAlex 建议留个邮箱，限流更宽松
 s2_api_key_env = "S2_API_KEY"      # 可选，有 Semantic Scholar 的 key 会快一些
@@ -96,6 +118,8 @@ s2_api_key_env = "S2_API_KEY"      # 可选，有 Semantic Scholar 的 key 会�
 ideas = 4                          # proposal 总数：你的原始 idea 1 份 + 新方向 3 份
 lang = "zh"                        # 提示词和报告用哪个版本：zh 中文 / en 英文
 language = "中文"                  # 模型用什么语言写，不填就跟 lang 一致
+min_fulltexts = 3                  # 读到的全文少于这个数，或者全是低质量，就停在第 5 步，不往下找空白、写 proposal。
+                                   # 想照样跑完，运行时加 --force
 max_fulltext_chars = 60000         # 精读时每篇全文最多给多少字符，超出的保留开头和结尾
 reviewer_fulltext_papers = 3       # 评审时附上最接近的几篇论文的全文节选
 reviewer_fulltext_chars = 15000    # 每篇节选多少字符

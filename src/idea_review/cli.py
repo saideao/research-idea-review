@@ -74,7 +74,7 @@ def cmd_check(args) -> int:
     for w in cfg.warnings():
         print(f"注意：{w}")
     if not args.ping:
-        print("加上 --ping 会给每个模型发一个很小的请求，确认接口能用（会产生少量费用）。")
+        print("加上 --ping 会给每个模型发一个很小的请求，确认能用（走 API 的会产生少量费用，走订阅的用掉一点额度）。")
         return 0
 
     async def ping() -> int:
@@ -140,11 +140,15 @@ def cmd_run(args) -> int:
         print(f"数量设置有问题：{e}")
         return 2
     print(f"运行目录：{run_dir}")
+    pipeline = Pipeline(cfg, run_dir, idea, papers_dir, queries, force=args.force)
     try:
-        out = asyncio.run(Pipeline(cfg, run_dir, idea, papers_dir, queries).run())
+        out = asyncio.run(pipeline.run())
     except PipelineError as e:
         print(f"停下了：{e}\n已经完成的步骤都保存在 {run_dir}，修好问题后用 --resume 接着跑。")
         return 1
+    if pipeline.stopped:
+        print(f"文献证据不够，停在了第 5 步。报告里有已经读到的文献和补文献的办法：{out}")
+        return 0
     print(f"报告已生成：{out}")
     return 0
 
@@ -185,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--candidates", type=_count, metavar="N",
                    help="候选篇数：检索去重后留 N 篇去初筛，覆盖配置里的 search.max_candidates")
     p.add_argument("--resume", help="接着跑一个已有的运行目录；可以同时用 --refs / --candidates 调大数量")
+    p.add_argument("--force", action="store_true",
+                   help="读到的全文太少或者全是低质量时，默认停在第 5 步；加上这个照样往下找空白、写 proposal")
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("report", help="根据已有结果重新生成 HTML 报告")

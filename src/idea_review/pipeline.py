@@ -7,6 +7,9 @@
 你按编号手动放进 papers/ 的 PDF（比如 P07.pdf）也会在接着跑时补读。
 只要补进了新的全文，或者之前精读失败的这次读成功了，第 6–10 步就按新的文献重做，旧结果挪进 history/。
 调小数量不删任何已有结果。
+
+全文不够数、候选里能下载的又用完了，会从存下的检索结果里再取一批候选，最多扩到设定候选数的 3 倍。
+读到的全文太少或者全是低质量，就停在第 5 步，不往下找空白、写 proposal；加 --force 才照样往下跑。
 """
 from __future__ import annotations
 
@@ -20,9 +23,9 @@ from pathlib import Path
 from pydantic import BaseModel, TypeAdapter
 
 from . import prompts
-from .config import Config
+from .config import COUNT_LIMITS, Config
 from .llm import LLMError, ProviderPool, UsageTracker
-from .pdfs import candidate_urls, clip, fetch_fulltexts, pdf_title
+from .pdfs import clip, fetch_fulltexts, pdf_title
 from .texts import TEXTS
 from .schemas import (
     ChairRecord, ChairSummary, FullText, IdeaSeeds, Landscape, MetaReview, MetaReviewRecord, Paper,
@@ -31,6 +34,10 @@ from .schemas import (
 from .search import search_all
 
 TIER_ORDER = {"high": 0, "medium": 1, "low": 2}
+# 全文不够数时，候选最多自动扩到设定数量的几倍
+EXPAND_FACTOR = 3
+# 找空白时空白个数的上下限：按读到的全文篇数定，读得少就少写
+MIN_GAPS, MAX_GAPS = 3, 8
 # 依赖精读笔记的几步：补读了新论文就要重做
 DOWNSTREAM = ("06_landscape", "07_seeds", "08_proposals", "09_meta_reviews", "10_chair")
 
@@ -68,6 +75,26 @@ class RunStore:
         self.path(name).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def evidence_shortfall(reviews: dict[str, ReviewRecord], need: int) -> dict | None:
+    """读到的全文太少，或者全是低质量，拿它们找空白、写 proposal 意义不大。返回停下的原因，证据够了返回 None。"""
+    done = [r.review for r in reviews.values() if r.review]
+    strong = sum(1 for r in done if r.quality.tier in ("high", "medium"))
+    if len(done) < need:
+        return {"reason": "few", "read": len(done), "need": need, "strong": strong}
+    if not strong:
+        return {"reason": "all_low", "read": len(done), "need": need, "strong": 0}
+    return None
+
+
+def evidence_need(min_fulltexts: int, download: int) -> int:
+    # 精读篇数本身设得比门槛小时（比如 --refs 2），按精读篇数算，不然永远过不了
+    return min(min_fulltexts, download)
+
+
+def _duration(seconds: float) -> str:
+    return f"{seconds:.0f} 秒" if seconds < 60 else f"{seconds / 60:.1f} 分钟"
+
+
 def make_logger(run_dir: Path):
     log_path = run_dir / "run.log"
 
@@ -91,7 +118,7 @@ def paper_line(p: Paper, t: dict) -> str:
 def review_digest(p: Paper, r: PaperReview, t: dict) -> str:
     q, join, none = r.quality, t["join"].join, t["none"]
     text = t["review_digest"].format(
-        line=paper_line(p, t), tier=q.tier, does=r.what_it_actually_does, method=r.method, setup=r.setup,
+        line=paper_line(p, t), kind=t["paper_types"][q.paper_type], tier=q.tier, does=r.what_it_actually_does, method=r.method, setup=r.setup,
         results=join(r.key_results), limits=join(r.limitations) or none, open=join(r.open_questions) or none,
         strength=q.evidence_strength, flags=join(q.red_flags) or none,
     )
@@ -135,11 +162,14 @@ def meta_review_text(reviewer: str, mr: MetaReview, t: dict) -> str:
 
 class Pipeline:
     def __init__(self, cfg: Config, run_dir: Path, idea: str, papers_dir: Path | None = None,
-                 queries: list[str] | None = None):
+                 queries: list[str] | None = None, force: bool = False):
         self.cfg = cfg
         self.idea = idea.strip()
         self.papers_dir = papers_dir
         self.queries = queries or []
+        self.force = force
+        self.stopped: dict | None = None    # 证据不够、停在第 5 步时记下原因
+        self.fetched = False                # 这次有没有下载过全文
         self.store = RunStore(run_dir)
         self.log = make_logger(run_dir)
         self.tracker = UsageTracker()
@@ -189,6 +219,12 @@ class Pipeline:
         self.log(f"数量：候选最多 {counts['max_candidates']} 篇，精读 {counts['download']} 篇"
                  + (f"（这次改了：{'，'.join(changed)}）" if changed else ""))
 
+    def _bump_meta(self, key: str, n: int) -> None:
+        path = self.store.path("meta")
+        meta = json.loads(path.read_text(encoding="utf-8"))
+        meta[key] = meta.get(key, 0) + n
+        path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
     def _archive_downstream(self, why: str) -> None:
         """精读的论文变多了，第 6–10 步要按新的笔记重做。旧结果挪进 history/ 留底，不删。"""
         old = [self.store.path(n) for n in DOWNSTREAM if self.store.has(n)]
@@ -208,20 +244,88 @@ class Pipeline:
         for w in self.cfg.warnings():
             self.log(f"注意：{w}")
 
-        plan = await self.step_plan()
-        papers = await self.step_search(plan)
-        screen = await self.step_screen(plan, papers)
-        fulltexts = await self.step_fulltext(papers, screen)
-        reviews = await self.step_read(papers, fulltexts)
-        landscape = await self.step_landscape(papers, screen, reviews)
-        proposals = await self.step_proposals(papers, reviews, landscape)
-        metas = await self.step_meta_reviews(papers, fulltexts, reviews, proposals)
-        await self.step_chair(proposals, metas)
+        plan = await self._timed(self.step_plan())
+        papers = await self._timed(self.step_search(plan))
+        screen = await self._timed(self.step_screen(plan, papers))
+        fulltexts = await self._timed(self.step_fulltext(papers, screen))
+        while more := self._expand_candidates(papers, fulltexts):
+            papers = more
+            screen = await self._timed(self.step_screen(plan, papers))
+            fulltexts = await self._timed(self.step_fulltext(papers, screen))
+        self._log_fulltext_shortfall(papers, fulltexts)
+        reviews = await self._timed(self.step_read(papers, fulltexts))
+
+        # 已经找过空白的（比如加了 --force 跑完的），接着跑时不再拦
+        shortfall = None if self.store.has("06_landscape") else evidence_shortfall(
+            reviews, evidence_need(self.cfg.review.min_fulltexts, self.cfg.search.download))
+        if shortfall and not self.force:
+            self.stopped = shortfall
+            self._log_stop(shortfall)
+        else:
+            if shortfall:
+                self.log("证据不够，但加了 --force，照样往下跑。后面的空白和 proposal 只能当线索。")
+            landscape = await self._timed(self.step_landscape(papers, screen, reviews))
+            proposals = await self._timed(self.step_proposals(papers, reviews, landscape))
+            metas = await self._timed(self.step_meta_reviews(papers, fulltexts, reviews, proposals))
+            await self._timed(self.step_chair(proposals, metas))
 
         from .report import build_report
         out = build_report(self.store.dir, self.cfg)
-        self.log(f"完成，用时 {(time.time() - start) / 60:.1f} 分钟。报告：{out}")
+        done = "停在第 5 步" if self.stopped else "完成"
+        self.log(f"{done}，用时 {_duration(time.time() - start)}。报告：{out}")
         return out
+
+    async def _timed(self, step):
+        """跑一步。真的干了活（超过 1 秒）就记下用时，方便看时间都花在哪。"""
+        start = time.time()
+        result = await step
+        if (spent := time.time() - start) >= 1:
+            self.log(f"  用时 {_duration(spent)}")
+        return result
+
+    def _log_stop(self, why: dict) -> None:
+        if why["reason"] == "few":
+            self.log(f"只读到 {why['read']} 篇全文，少于 {why['need']} 篇（review.min_fulltexts），"
+                     "拿这么点文献找空白、写 proposal 意义不大，第 6–10 步没有跑。")
+        else:
+            self.log(f"读到的 {why['read']} 篇全文都是低质量，拿它们找空白、写 proposal 意义不大，第 6–10 步没有跑。")
+        self.log(f"  想补文献：把相关论文的 PDF 按编号放进 {self.store.dir / 'papers'}/（比如 P07.pdf），"
+                 f"再运行 idea-review run --resume {self.store.dir}；检索结果本身太少的话，换几条检索式开一次新的运行。")
+        self.log("  确实想用现有的文献跑完，接着跑时加 --force。")
+
+    def _expand_candidates(self, papers: list[Paper], fulltexts: dict[str, FullText]) -> list[Paper] | None:
+        """全文不够数、候选里能下载的又用完了，就从第一次检索存下的结果里再取一批候选。
+        最多扩到设定候选数的 EXPAND_FACTOR 倍。返回加了新候选的列表；不用扩或者扩不了返回 None。"""
+        s = self.cfg.search
+        got = sum(1 for p in papers if not p.local_path and p.paper_id in fulltexts and fulltexts[p.paper_id].status == "ok")
+        if got >= s.download:
+            return None
+        have = sum(1 for p in papers if not p.local_path)
+        cap = min(s.max_candidates * EXPAND_FACTOR, COUNT_LIMITS["max_candidates"][1])
+        pool = self.store.load("02_search_results", list[Paper]) or []
+        take = min(cap - have, max(10, 3 * (s.download - got)))
+        extra = pool[have:have + take] if take > 0 else []
+        if not extra:
+            return None
+        for i, p in enumerate(extra, start=have + 1):
+            p.paper_id = f"P{i:02d}"
+        self.log(f"  全文还差 {s.download - got} 篇，候选里能下载的已经用完。"
+                 f"从检索结果里再取 {len(extra)} 篇候选（{extra[0].paper_id}–{extra[-1].paper_id}）去初筛")
+        papers = papers + extra
+        self.store.save("02_candidates", papers, list[Paper])
+        self._bump_meta("expanded", len(extra))
+        return papers
+
+    def _log_fulltext_shortfall(self, papers: list[Paper], fulltexts: dict[str, FullText]) -> None:
+        target = self.cfg.search.download
+        got = sum(1 for p in papers if not p.local_path and p.paper_id in fulltexts and fulltexts[p.paper_id].status == "ok")
+        if not self.fetched or got >= target:
+            return
+        have = sum(1 for p in papers if not p.local_path)
+        pool = self.store.load("02_search_results", list[Paper]) or []
+        why = "检索结果都试过了" if have >= len(pool) else f"候选已经自动扩到 {have} 篇，到了上限"
+        self.log(f"  只拿到 {got} 篇全文，没到设定的 {target} 篇：{why}。"
+                 "想多读几篇，可以把 PDF 按编号放进 papers/ 再 --resume，或者换几条检索式开一次新的运行。")
 
     async def step_plan(self) -> QueryPlan:
         plan = self.store.load("01_plan", QueryPlan)
@@ -344,22 +448,20 @@ class Pipeline:
         manual = self._manual_pdfs(papers, saved) if saved is not None else []
         manual_ids = {p.paper_id for p in manual}
         # 排队：先高后中，低相关的不下载；试过的（不管成没成）不再排
+        # 没有 PDF 链接的也排队：下载时会按标题去 arXiv 找预印本
         queue = [p for level in ("high", "medium") for p in papers
                  if not p.local_path and p.paper_id not in result and p.paper_id not in manual_ids and relevance(p) == level]
-        no_pdf = [p for p in queue if not candidate_urls(p) and relevance(p) == "high"]
-        queue = [p for p in queue if candidate_urls(p)]
         local = [p for p in papers if p.local_path and p.paper_id not in result]
         got = sum(1 for p in papers if not p.local_path and p.paper_id in result and result[p.paper_id].status == "ok")
-        if saved is not None and not manual and not local and not no_pdf and (got >= target or not queue):
+        if saved is not None and not manual and not local and (got >= target or not queue):
             if got > target and target < self.prev_counts.get("download", target):
                 self.log(f"  已经拿到 {got} 篇全文，比设定的 {target} 篇多。调小数量不会删掉已经下载和精读的论文。")
             return saved
 
+        self.fetched = True
         self.log("第 4 步：下载全文" if saved is None else f"第 4 步：补全文（已有 {got} 篇，要 {target} 篇）")
         if manual:
             self.log(f"  找到你手动放进 papers/ 的 PDF：{'、'.join(sorted(manual_ids))}")
-        for p in no_pdf:
-            result[p.paper_id] = FullText(paper_id=p.paper_id, status="no_pdf", note=self.t["no_pdf_note"])
         added, batch = 0, local + manual
         first = batch
         while True:
@@ -372,6 +474,8 @@ class Pipeline:
             fetched = await fetch_fulltexts(batch, self.store.dir, self.log)
             result.update(fetched)
             for p in batch:
+                if fetched[p.paper_id].status == "no_pdf":
+                    result[p.paper_id] = fetched[p.paper_id].model_copy(update={"note": self.t["no_pdf_note"]})
                 if fetched[p.paper_id].status == "ok":
                     added += 1
                     got += 0 if p.local_path else 1
@@ -383,8 +487,6 @@ class Pipeline:
         self.store.save("04_fulltext", result, dict[str, FullText])
         n_local = sum(1 for p in papers if p.local_path and result.get(p.paper_id) and result[p.paper_id].status == "ok")
         self.log(f"  拿到全文 {got} 篇" + (f"，另有本地 PDF {n_local} 篇" if n_local else ""))
-        if got < target:
-            self.log(f"  高、中相关又能下载到全文的候选用完了，没到设定的 {target} 篇。想多读几篇，可以调大 --candidates，让更多论文进入初筛。")
         return result
 
     async def step_read(self, papers: list[Paper], fulltexts: dict[str, FullText]) -> dict[str, ReviewRecord]:
@@ -443,13 +545,17 @@ class Pipeline:
         strong, weak = self._digests(papers, reviews, screen)
         if not strong and not weak:
             raise PipelineError("没有可用的文献笔记，没法找空白。检查网络，或者用 --papers-dir 提供本地 PDF。")
+        max_gaps = min(MAX_GAPS, max(MIN_GAPS, len(strong) + len(weak)))
         try:
-            landscape = await self._call("miner", "mine_gaps", Landscape, idea=self.idea,
+            landscape = await self._call("miner", "mine_gaps", Landscape, idea=self.idea, max_gaps=max_gaps,
                                          digests="\n\n".join(strong) or self.t["empty"], weak_digests="\n\n".join(weak) or self.t["empty"])
         except LLMError as e:
             raise PipelineError(f"找空白失败：{e}") from e
+        if len(landscape.gaps) > max_gaps:
+            self.log(f"  模型给了 {len(landscape.gaps)} 个空白，超过上限 {max_gaps} 个，只留前 {max_gaps} 个")
+            landscape.gaps = landscape.gaps[:max_gaps]
         self.store.save("06_landscape", landscape, Landscape)
-        self.log(f"  找到 {len(landscape.gaps)} 个空白")
+        self.log(f"  找到 {len(landscape.gaps)} 个空白（上限 {max_gaps} 个，按读到的 {len(strong) + len(weak)} 篇文献定）")
         return landscape
 
     async def step_proposals(self, papers, reviews, landscape: Landscape) -> list[ProposalRecord]:
@@ -464,8 +570,10 @@ class Pipeline:
             for i, g in enumerate(landscape.gaps, start=1)
         ) or t["no_gaps"]
 
-        n_seeds = max(self.cfg.review.ideas - 1, 0)
+        n_seeds = min(max(self.cfg.review.ideas - 1, 0), len(landscape.gaps))
         seeds = self.store.load("07_seeds", IdeaSeeds)
+        if seeds is None and n_seeds < self.cfg.review.ideas - 1:
+            self.log(f"  只有 {len(landscape.gaps)} 个空白，新方向最多挖 {n_seeds} 个")
         if seeds is None and n_seeds:
             self.log(f"第 7 步：从空白里挖 {n_seeds} 个新方向")
             landscape_text = t["landscape_text"].format(summary=landscape.summary, gaps=gaps_text)

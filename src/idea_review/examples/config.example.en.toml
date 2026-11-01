@@ -54,6 +54,28 @@ max_tokens = 8000
 # api_key_env = "OTHER_API_KEY"
 # family = "other-company"
 
+# Instead of an API, you can use the subscription of a code agent on this computer: install its command-line tool
+# and log in first; no API key is needed. Each call starts a fresh session in an empty temporary folder and does not
+# read your project files. Leave model out to use the tool's own default model.
+
+# [providers.claude_sub]
+# type = "claude_code"             # runs the claude command (Claude Code) with your Claude subscription
+# model = "sonnet"                 # optional: sonnet / opus / haiku or a full model name
+# effort = "medium"                # optional: thinking effort
+# family = "anthropic"
+# concurrency = 2                  # how many run at once; too many may hit the subscription's rate limits
+# timeout = 900                    # max seconds to wait for each call
+
+# [providers.codex_sub]
+# type = "codex"                   # runs codex exec with your ChatGPT subscription
+# model = "a model name available in Codex"   # optional. ~/.codex/config.toml is not read, so set the model here
+# effort = "medium"                # optional: thinking effort
+# family = "openai"
+
+# [providers.gemini_sub]
+# type = "gemini_cli"              # runs the gemini command (Gemini CLI) with the account it is logged in to
+# family = "google"
+
 [roles]
 planner = "claude"                 # plan search queries
 screener = "claude"                # screen by title and abstract (only decides which full texts to read first)
@@ -68,8 +90,9 @@ sources = ["semantic_scholar", "arxiv", "openalex"]
 per_query = 20                     # papers per query, per source (1–100); only used for the first search
 max_candidates = 80                # candidates: how many to keep after deduplication for screening (5–300). Override with --candidates N
 download = 15                      # papers read in full: how many full texts to download and read (1–50, at most the number of candidates).
-                                   # A failed download is replaced by the next paper until the number is reached or the
-                                   # high- and medium-relevance candidates run out. Override with --refs N
+                                   # A failed download is replaced by the next paper. If the downloadable candidates run out
+                                   # first, more candidates are taken from the search results automatically, up to 3 times
+                                   # the number of candidates. Override with --refs N
 # year_from = 2020                 # only papers from this year on
 # openalex_mailto = "you@example.com"   # optional; OpenAlex is more lenient with rate limits if you leave an email
 s2_api_key_env = "S2_API_KEY"      # optional; a Semantic Scholar key makes searching faster
@@ -78,6 +101,8 @@ s2_api_key_env = "S2_API_KEY"      # optional; a Semantic Scholar key makes sear
 ideas = 4                          # total proposals: 1 for your original idea + 3 new directions
 lang = "en"                        # version of the prompts and report: en English / zh Chinese
 language = "English"               # language the models write in; defaults to match lang
+min_fulltexts = 3                  # if fewer full texts than this are read, or all are low quality, stop after step 5 and
+                                   # do not find gaps or write proposals. Add --force when running to finish anyway
 max_fulltext_chars = 60000         # max characters of each full text given to the reader; longer texts keep the start and end
 reviewer_fulltext_papers = 3       # reviewers also get excerpts of the closest few papers
 reviewer_fulltext_chars = 15000    # characters per excerpt
