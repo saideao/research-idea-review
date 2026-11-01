@@ -1,0 +1,37 @@
+# 试跑用的配置：检索和下载是真的，模型全部换成 mock，不调用任何付费接口。
+# 用来看流程能不能跑通、报告长什么样。报告里的文字都是占位符。
+# mock 模型拆不出真的检索词，要用 --query 自己给英文检索式（可以写多次）：
+#   idea-review run "你的 idea" --config config.mock.toml --query "英文检索式 1" --query "英文检索式 2"
+
+[providers.writer_mock]
+type = "mock"
+model = "mock-a"
+family = "vendor-a"
+
+[providers.reviewer_b]
+type = "mock"
+model = "mock-b"
+family = "vendor-b"
+
+[providers.reviewer_c]
+type = "mock"
+model = "mock-c"
+family = "vendor-c"
+
+[roles]
+planner = "writer_mock"
+screener = "writer_mock"
+reader = "writer_mock"
+miner = "writer_mock"
+writer = "writer_mock"
+reviewers = ["reviewer_b", "reviewer_c"]
+chair = "reviewer_b"
+
+[search]
+sources = ["semantic_scholar", "arxiv", "openalex"]
+per_query = 10
+max_candidates = 40
+download = 5
+
+[review]
+ideas = 3

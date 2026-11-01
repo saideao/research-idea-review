@@ -1,0 +1,102 @@
+# idea-review 配置
+#
+# 1. 在 [providers.xxx] 里登记你要用的模型。API Key 不写在这里，只写环境变量的名字，
+#    运行前在终端里 export，比如：export ANTHROPIC_API_KEY=sk-...
+# 2. 在 [roles] 里指定每个环节用哪个模型。
+#    写 proposal 的（writer）和做元评审的（reviewers）最好来自不同公司：
+#    模型都有点讨好用户，给自己写的东西打分也偏高。
+# 3. 模型名会更新，下面的写法只是示例，以各家控制台里你能用的为准。
+#    family 填公司名，同一家公司的模型填同一个，程序用它检查"写的和审的是不是一家"。
+
+[providers.claude]
+type = "anthropic"                 # 走 Anthropic 官方 SDK
+model = "claude-opus-5-5"
+api_key_env = "ANTHROPIC_API_KEY"
+family = "anthropic"
+effort = "medium"                  # 思考深度：low / medium / high / xhigh / max
+fallbacks = "default"              # 被安全分类器拒答时由服务端自动换模型重跑；不要就写 "off"
+concurrency = 4
+
+[providers.gpt]
+type = "openai_compatible"
+base_url = "https://api.openai.com/v1"
+model = "gpt-5.4"
+api_key_env = "OPENAI_API_KEY"
+family = "openai"
+max_tokens_param = "max_completion_tokens"   # OpenAI 的推理模型用这个参数名
+max_tokens = 32000
+
+[providers.gemini]
+type = "openai_compatible"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+model = "gemini-3.1-pro"
+api_key_env = "GEMINI_API_KEY"
+family = "google"
+max_tokens = 32000
+
+[providers.deepseek]
+type = "openai_compatible"
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+api_key_env = "DEEPSEEK_API_KEY"
+family = "deepseek"
+max_tokens = 8000
+
+# 下面几家也提供 OpenAI 兼容接口。要用的话去掉注释，把模型名换成控制台里的名字。
+# 本机的 LiteLLM 之类的代理也一样，base_url 填代理地址，比如 "http://127.0.0.1:4000/v1"。
+
+# [providers.kimi]
+# type = "openai_compatible"
+# base_url = "https://api.moonshot.cn/v1"
+# model = "填 Kimi 控制台里的模型名"
+# api_key_env = "MOONSHOT_API_KEY"
+# family = "moonshot"
+
+# [providers.qwen]
+# type = "openai_compatible"
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# model = "qwen-max"
+# api_key_env = "DASHSCOPE_API_KEY"
+# family = "alibaba"
+
+# [providers.glm]
+# type = "openai_compatible"
+# base_url = "https://open.bigmodel.cn/api/paas/v4/"
+# model = "填智谱控制台里的模型名"
+# api_key_env = "ZHIPUAI_API_KEY"
+# family = "zhipu"
+
+# [providers.doubao]
+# type = "openai_compatible"
+# base_url = "https://ark.cn-beijing.volces.com/api/v3"
+# model = "填方舟控制台里的推理接入点 ID 或模型名"
+# api_key_env = "ARK_API_KEY"
+# family = "bytedance"
+
+[roles]
+planner = "claude"                 # 拆检索词
+screener = "claude"                # 按标题和摘要初筛（只决定先读哪些全文）
+reader = "claude"                  # 精读全文、判断文献质量、核对摘要和正文
+miner = "claude"                   # 画版图、找空白
+writer = "claude"                  # 挖新方向、写 proposal（模型 A）
+reviewers = ["gpt", "gemini", "deepseek"]   # 元评审（模型 B、C、D），各开一个新对话
+chair = "gpt"                      # 汇总几位评审的共识和分歧，不下结论
+
+[search]
+sources = ["semantic_scholar", "arxiv", "openalex"]
+per_query = 20                     # 每条检索式、每个来源取多少篇（1–100），只在第一次检索时用
+max_candidates = 80                # 候选篇数：合并去重后留多少篇去初筛（5–300）。运行时可以用 --candidates N 覆盖
+download = 15                      # 精读篇数：下载全文并逐篇精读多少篇（1–50，不能多于候选篇数）。
+                                   # 下载失败的往下顺延，直到够数或高、中相关的候选用完。运行时可以用 --refs N 覆盖
+# year_from = 2020                 # 只看这一年以后的论文
+# openalex_mailto = "you@example.com"   # 可选，OpenAlex 建议留个邮箱，限流更宽松
+s2_api_key_env = "S2_API_KEY"      # 可选，有 Semantic Scholar 的 key 会快一些
+
+[review]
+ideas = 4                          # proposal 总数：你的原始 idea 1 份 + 新方向 3 份
+lang = "zh"                        # 提示词和报告用哪个版本：zh 中文 / en 英文
+language = "中文"                  # 模型用什么语言写，不填就跟 lang 一致
+max_fulltext_chars = 60000         # 精读时每篇全文最多给多少字符，超出的保留开头和结尾
+reviewer_fulltext_papers = 3       # 评审时附上最接近的几篇论文的全文节选
+reviewer_fulltext_chars = 15000    # 每篇节选多少字符
+screen_batch = 20                  # 初筛时每次给模型看多少篇

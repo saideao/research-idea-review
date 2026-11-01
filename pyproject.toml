@@ -1,0 +1,27 @@
+[project]
+name = "idea-review"
+version = "0.1.0"
+description = "输入一个研究 idea：检索文献、下载全文、评文献质量、找空白、写 proposal、多个模型做元评审，输出一份 HTML 报告"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=1.0",
+    "openai>=1.40",
+    "httpx>=0.27",
+    "pydantic>=2.6",
+    "pypdf>=4.0",
+    "jinja2>=3.1",
+]
+
+[project.scripts]
+idea-review = "idea_review.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/idea_review"]

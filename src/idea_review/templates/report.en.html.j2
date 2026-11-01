@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idea Review Report</title>
+<style>
+{% include "_style.css" %}
+</style>
+</head>
+<body>
+
+{% macro level(v) -%}<span class="badge b-{{ v }}">{{ LEVEL[v] }}</span>{%- endmacro %}
+{% macro pubbadge(p) -%}
+{%- if p.local_path -%}<span class="badge b-unk">Local</span>
+{%- elif p.peer_reviewed is true -%}<span class="badge b-pub">Peer-reviewed</span>
+{%- elif p.peer_reviewed is false -%}<span class="badge b-pre">Preprint</span>
+{%- else -%}<span class="badge b-unk">Publication status unknown</span>{%- endif -%}
+{%- endmacro %}
+{% macro plist(items) -%}
+{%- if items %}<ul class="tight">{% for i in items %}<li>{{ i | refs }}</li>{% endfor %}</ul>{% else %}<span class="meta">None</span>{% endif -%}
+{%- endmacro %}
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Idea Review Report · {{ meta.created | replace("T", " ") }}</div>
+    <h1>{{ plan.restated_idea if plan else idea }}</h1>
+    <p class="idea">Your original idea: {{ idea }}</p>
+    <div class="stats">
+      <div class="stat"><b class="num">{{ stats.candidates }}</b><span>candidate papers{% if stats.local %}, plus {{ stats.local }} local{% endif %}</span></div>
+      <div class="stat"><b class="num">{{ stats.read }}</b><span>read in full</span></div>
+      <div class="stat"><b class="num">{{ stats.high }} / {{ stats.low }}</b><span>high / low quality</span></div>
+      <div class="stat"><b class="num">{{ stats.mismatch }}</b><span>abstracts that overclaim or contradict the body</span></div>
+      <div class="stat"><b class="num">{{ stats.gaps }}</b><span>gaps in the literature</span></div>
+      <div class="stat"><b class="num">{{ stats.proposals }} × {{ stats.reviewers }}</b><span>proposals × reviewer models</span></div>
+    </div>
+    {% if warnings %}
+    <div class="warn"><b>Note</b><ul class="tight">{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>
+    {% endif %}
+  </div>
+</header>
+
+<nav class="toc"><div class="wrap">
+  <a href="#search">① Search</a><a href="#papers">② Papers</a><a href="#gaps">③ Gaps</a>
+  <a href="#proposals">④ Proposals &amp; reviews</a><a href="#decide">⑤ Your call</a><a href="#appendix">Appendix</a>
+</div></nav>
+
+<main class="wrap">
+
+<section id="search">
+  <h2>① Search</h2>
+  {% if plan %}
+  <div class="card">
+    <div class="kv"><b>Field</b>{{ plan.field }}</div>
+    <div class="kv"><b>Core concepts</b></div>
+    <div class="chips">{% for c in plan.core_concepts %}<span class="chip">{{ c }}</span>{% endfor %}</div>
+    <div class="kv"><b>Queries</b></div>
+    <ul class="tight">{% for q in plan.search_queries %}<li><code>{{ q }}</code></li>{% endfor %}</ul>
+    <div class="meta">Sources: {{ cfg.search.sources | join(", ") }}. Papers are first screened by title and abstract; full texts are then downloaded and read in order of relevance, and a failed download is replaced by the next paper.</div>
+    <h4>Number of references</h4>
+    <table>
+      <tr><th></th><th>Setting</th><th>Actual</th></tr>
+      <tr><td>Per query, per source</td><td>{{ counts.per_query }} papers</td><td class="meta">—</td></tr>
+      <tr><td>Candidates (screened)</td><td>up to {{ counts.max_candidates }}</td>
+        <td>{{ stats.candidates }}{% if count_notes.candidates %} <span class="meta">{{ count_notes.candidates | join("; ") }}</span>{% endif %}</td></tr>
+      <tr><td>Read in full</td><td>{{ counts.download }}</td>
+        <td>{{ stats.fulltext }}{% if count_notes.fulltext %} <span class="meta">{{ count_notes.fulltext | join("; ") }}</span>{% endif %}</td></tr>
+      {%- if stats.local %}
+      <tr><td>Local PDFs you provided</td><td class="meta">—</td><td>{{ stats.local }} <span class="meta">counted separately, not part of the reading quota</span></td></tr>
+      {%- endif %}
+    </table>
+    <div class="meta">Change these at run time with <code>--candidates N</code> (candidates) and <code>--refs N</code> (papers read in full).</div>
+  </div>
+  {% else %}<p class="meta">This step has not finished yet.</p>{% endif %}
+</section>
+
+<section id="papers">
+  <h2>② Papers</h2>
+  <p class="lead">"Quality" is the model's judgment after reading the full text, based only on the paper's own evidence; "peer-reviewed / preprint" comes from the search metadata. Where an abstract overclaims or contradicts the body, go by the body; scope an abstract leaves out is also listed in the notes.</p>
+  {% if read %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Paper</th><th>Year</th><th>Venue</th><th class="num">Cited</th><th>Quality</th><th>Abstract vs. body</th></tr></thead>
+    <tbody>
+    {% for x in read %}{% set p = x.paper %}{% set r = x.review %}
+      <tr>
+        <td><a class="ref" href="#paper-{{ p.paper_id }}">{{ p.paper_id }}</a></td>
+        <td>{{ p.title }}</td>
+        <td class="num">{{ p.year or "—" }}</td>
+        <td>{{ pubbadge(p) }} <span class="meta">{{ p.venue or "" }}</span></td>
+        <td class="num">{{ p.citation_count if p.citation_count is not none else "—" }}</td>
+        <td>{{ level(r.quality.tier) }}</td>
+        <td>{% if not r.abstract_vs_body.consistent %}<span class="badge b-warn">Overclaims</span>
+          {%- elif r.abstract_vs_body.scope_gaps %}<span class="meta">Scope left out</span>
+          {%- else %}<span class="meta">Consistent</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+
+  <h3>Reading notes, paper by paper</h3>
+  {% for x in read %}{% set p = x.paper %}{% set r = x.review %}
+  <details class="paper" id="paper-{{ p.paper_id }}">
+    <summary>
+      <span class="ref">{{ p.paper_id }}</span> <span class="title">{{ p.title }}</span><br>
+      <span class="meta">{{ p.year or "Year unknown" }} · {{ p.venue or "Venue unknown" }} · </span>{{ pubbadge(p) }}
+      Quality {{ level(r.quality.tier) }}
+      {% if not r.abstract_vs_body.consistent %}<span class="badge b-warn">Abstract overclaims or contradicts the body</span>{% endif %}
+      {% if x.truncated %}<span class="badge b-unk">Full text too long; middle omitted</span>{% endif %}
+    </summary>
+    <div class="body">
+      <p class="meta">
+        {% if p.authors %}{{ p.authors[:6] | join(", ") }}{% if p.authors | length > 6 %} et al.{% endif %} · {% endif %}
+        {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener">Source</a> · {% endif %}
+        {% if x.pdf %}Local PDF: <code>{{ x.pdf }}</code>{% endif %}
+      </p>
+      <div class="kv"><b>What it actually does</b>{{ r.what_it_actually_does | refs }}</div>
+      {% if r.abstract_vs_body.overclaims %}
+      <div class="mismatch"><b>Abstract overclaims or contradicts the body:</b>{{ plist(r.abstract_vs_body.overclaims) }}</div>
+      {% endif %}
+      {% if r.abstract_vs_body.scope_gaps %}
+      <div class="kv"><b>Scope the abstract leaves out</b>{{ plist(r.abstract_vs_body.scope_gaps) }}</div>
+      {% endif %}
+      <div class="grid2">
+        <div>
+          <div class="kv"><b>Problem</b>{{ r.problem | refs }}</div>
+          <div class="kv"><b>Method</b>{{ r.method | refs }}</div>
+          <div class="kv"><b>Setup</b>{{ r.setup | refs }}</div>
+          <h4>Key results</h4>{{ plist(r.key_results) }}
+        </div>
+        <div>
+          <h4>Quality: {{ level(r.quality.tier) }}</h4>
+          <div class="meta">{{ r.quality.tier_reason | refs }}</div>
+          <div class="kv"><b>Evidence</b>{{ level(r.quality.evidence_strength) }} &nbsp; <b>Reproducibility</b>{{ level(r.quality.reproducibility) }}</div>
+          <h4>Rigor</h4>{{ plist(r.quality.rigor) }}
+          {% if r.quality.red_flags %}<h4>Red flags</h4>{{ plist(r.quality.red_flags) }}{% endif %}
+        </div>
+      </div>
+      <div class="callout"><b>Relation to your idea:</b> {{ r.relevance_to_idea | refs }}</div>
+      <div class="grid2">
+        <div><h4>Limitations</h4>{{ plist(r.limitations) }}</div>
+        <div><h4>Open questions</h4>{{ plist(r.open_questions) }}</div>
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+  {% else %}<p class="meta">No papers have been read in full yet.</p>{% endif %}
+
+  {% if missing or failed_reads %}
+  <h3>Highly relevant, but not read in full</h3>
+  <p class="lead">Download the PDF, name it by its ID and put it in <code>{{ run_dir }}/papers/</code> (e.g. <code>P07.pdf</code>), then run <code>idea-review run --resume {{ run_dir }}</code>. The program extracts the full text, reads it, and redoes the steps from finding gaps through the summary using the new literature; papers already read are not read again. For papers whose reading failed, just run the same command again to retry.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Paper</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for x in missing %}<tr id="paper-{{ x.paper.paper_id }}"><td><span class="ref">{{ x.paper.paper_id }}</span></td>
+      <td>{% if x.paper.url %}<a href="{{ x.paper.url }}" target="_blank" rel="noopener">{{ x.paper.title }}</a>{% else %}{{ x.paper.title }}{% endif %}<br><span class="meta">{{ x.paper.year or "" }} {{ x.paper.venue or "" }}</span></td>
+      <td class="meta">{{ x.fulltext.note }}</td></tr>{% endfor %}
+    {% for x in failed_reads %}<tr id="paper-{{ x.paper.paper_id }}"><td><span class="ref">{{ x.paper.paper_id }}</span></td>
+      <td>{{ x.paper.title }}</td><td class="error">Reading failed: {{ x.error }}</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+
+  {% if others %}
+  <details class="paper" style="margin-top:16px">
+    <summary><span class="title">The other {{ others | length }} candidates (title and abstract only)</span></summary>
+    <div class="body"><div class="table-wrap" style="border:0"><table>
+      <thead><tr><th>ID</th><th>Paper</th><th>Year</th><th>Screening</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for x in others %}<tr id="paper-{{ x.paper.paper_id }}">
+        <td><span class="ref">{{ x.paper.paper_id }}</span></td>
+        <td>{% if x.paper.url %}<a href="{{ x.paper.url }}" target="_blank" rel="noopener">{{ x.paper.title }}</a>{% else %}{{ x.paper.title }}{% endif %}</td>
+        <td class="num">{{ x.paper.year or "—" }}</td>
+        <td>{% if x.screen %}{{ level(x.screen.relevance) }}{% endif %}</td>
+        <td class="meta">{{ x.screen.reason if x.screen else "" }}</td>
+      </tr>{% endfor %}
+      </tbody>
+    </table></div></div>
+  </details>
+  {% endif %}
+</section>
+
+<section id="gaps">
+  <h2>③ Landscape and gaps</h2>
+  {% if landscape %}
+  <div class="card"><div class="kv"><b>Where it stands</b>{{ landscape.summary | refs }}</div></div>
+  {% if landscape.clusters %}
+  <h3>Groups of approaches</h3>
+  <div class="grid2">
+    {% for c in landscape.clusters %}<div class="card"><b>{{ c.name }}</b>
+      <div class="chips">{% for pid in c.paper_ids %}{{ pid | refs }}{% endfor %}</div>
+      <div>{{ c.summary | refs }}</div></div>{% endfor %}
+  </div>
+  {% endif %}
+  <h3>Gaps</h3>
+  {% for g in landscape.gaps %}
+  <div class="card gap-card" id="gap-G{{ loop.index }}">
+    <div class="meta">G{{ loop.index }} · {{ KIND.get(g.kind, g.kind) }} · {% if g.source == "authors_admit" %}admitted by the authors{% else %}inferred by the model{% endif %}</div>
+    <h3 style="margin-top:4px">{{ g.title }}</h3>
+    <div>{{ g.description | refs }}</div>
+    <h4>Evidence</h4>
+    <ul class="tight">{% for e in g.evidence %}<li>{{ e.paper_id | refs }}: {{ e.note | refs }}</li>{% endfor %}</ul>
+    <div class="kv"><b>Why it matters</b>{{ g.why_it_matters | refs }}</div>
+    <div class="kv"><b>Already-done risk</b>{{ g.already_done_risk | refs }}</div>
+  </div>
+  {% endfor %}
+  {% else %}<p class="meta">This step has not finished yet.</p>{% endif %}
+</section>
+
+<section id="proposals">
+  <h2>④ Proposals and reviews</h2>
+  <p class="lead">Proposals were written by <b>{{ cfg.provider("writer").describe(lang) }}</b>. Meta reviews were written independently, each in a fresh conversation, by
+    {% for p in cfg.reviewer_providers() %}<b>{{ p.describe(lang) }}</b>{% if not loop.last %}, {% endif %}{% endfor %}.
+    The reviewers saw only the proposal and the paper material, not how it was written.</p>
+
+  {% for v in proposals %}{% set rec = v.rec %}{% set prop = rec.proposal %}
+  <div class="card proposal" id="proposal-{{ rec.proposal_id }}">
+    <div class="tag">{{ rec.proposal_id }} · {% if rec.origin == "original" %}Your original idea{% else %}New direction mined from gaps in the literature{% endif %}</div>
+    {% if prop %}
+    <h3 style="margin-top:4px;font-size:19px">{{ prop.title }}</h3>
+    <p><b>{{ prop.one_liner }}</b></p>
+    {% if rec.seed %}<div class="callout">How it differs from the original idea: {{ rec.seed.differs_from_original | refs }}<br>Based on gaps: {% for g in rec.seed.based_on_gaps %}{{ g | refs }} {% endfor %}</div>{% endif %}
+    <div class="grid2">
+      <div>
+        <div class="kv"><b>Problem</b>{{ prop.problem | refs }}</div>
+        <div class="kv"><b>Why existing methods fall short</b>{{ prop.why_existing_fail | refs }}</div>
+        <div class="kv"><b>Method</b>{{ prop.method | refs }}</div>
+      </div>
+      <div>
+        <h4>Closest work</h4>
+        <ul class="tight">{% for c in prop.closest_work %}<li>{{ c.paper_id | refs }}: overlap {{ c.overlap | refs }}; difference {{ c.difference | refs }}</li>{% else %}<li class="meta">None</li>{% endfor %}</ul>
+      </div>
+    </div>
+    <h4>Minimal experiment ({{ prop.minimal_experiment.duration }})</h4>
+    <div>{{ prop.minimal_experiment.setup | refs }}</div>
+    <div class="meta">Data: {{ prop.minimal_experiment.data }}; baselines: {{ prop.minimal_experiment.baselines | join(", ") }}; metrics: {{ prop.minimal_experiment.metrics | join(", ") }}</div>
+    <div class="kv kill"><b>Signs it does not hold</b>{{ prop.falsification | refs }}</div>
+    <div class="grid2">
+      <div><h4>Risks</h4>{{ plist(prop.risks) }}</div>
+      <div><h4>Needs checking</h4>{{ plist(prop.needs_checking) }}</div>
+    </div>
+    {% if prop.questions_for_author %}<h4>For you to answer</h4>{{ plist(prop.questions_for_author) }}{% endif %}
+
+    <h3>Meta reviews</h3>
+    {% if v.chair and v.chair.summary %}{% set s = v.chair.summary %}
+    <div class="chair">
+      <b>Summary of the reviews</b> (compiled by {{ cfg.provider("chair").name }}, no verdict)
+      <p>{{ s.summary | refs }}</p>
+      {% if s.consensus %}<h4>Issues several reviewers raised</h4>
+      <ul class="tight">{% for c in s.consensus %}<li>{{ c.issue | refs }} <span class="meta">({{ c.raised_by | join(", ") }})</span></li>{% endfor %}</ul>{% endif %}
+      {% if s.disagreements %}<h4>Where they disagree</h4>
+      <ul class="tight">{% for d in s.disagreements %}<li><b>{{ d.topic }}</b>: {{ d.positions | join("; ") | refs }}</li>{% endfor %}</ul>{% endif %}
+      {% if s.must_verify %}<h4>You must verify yourself</h4>{{ plist(s.must_verify) }}{% endif %}
+    </div>
+    {% endif %}
+    <div class="reviewers">
+      {% for m in v.metas %}
+      <div class="reviewer">
+        <h4>{{ m.reviewer }} <span class="meta">{{ m.model }}</span></h4>
+        {% if m.review %}{% set r = m.review %}
+        <b>Overlap</b>
+        {% if r.overlap %}<ul class="tight">{% for o in r.overlap %}<li>{{ o.paper_id | refs }} {{ o.title }}{% if not o.read_full_text %} <span class="badge b-unk">full text not read; verify</span>{% endif %}<br>
+          <span class="meta">What it actually does: {{ o.what_it_actually_does | refs }}</span><br>Overlap: {{ o.overlap | refs }}; difference: {{ o.difference | refs }}</li>{% endfor %}</ul>
+        {% else %}<p class="meta">{{ r.no_overlap_note }}</p>{% endif %}
+        {% if r.abstract_body_mismatches %}<b>Abstracts that overclaim or contradict the body</b>{{ plist(r.abstract_body_mismatches) }}{% endif %}
+        <b>Most likely causes of death</b>
+        <ol class="tight">{% for d in r.causes_of_death %}<li>{{ d.reason | refs }} <span class="meta">({{ "from a paper" if d.source == "paper" else "inferred" }}: {{ d.basis | refs }})</span></li>{% endfor %}</ol>
+        <b>Feasibility</b>
+        <p style="margin:4px 0">Bottleneck: {{ r.feasibility.bottleneck | refs }}<br>Workaround: {{ r.feasibility.workaround | refs }}</p>
+        {% set f = r.cheapest_falsification %}
+        <b>Cheapest falsification experiment</b> ({{ f.est_days }})
+        <p style="margin:4px 0">{{ f.experiment | refs }}<br><span class="meta">Compare against: {{ f.compare_against }}; metric: {{ f.metric }}</span><br>
+          <span class="kill">Kill if: {{ f.kill_if | refs }}</span><br><span class="go">Continue if: {{ f.continue_if | refs }}</span></p>
+        <b>Must answer before investing</b>{{ plist(r.questions_for_author) }}
+        {% else %}<p class="error">Review failed: {{ m.error }}</p>{% endif %}
+      </div>
+      {% else %}<p class="meta">No reviews yet.</p>{% endfor %}
+    </div>
+    {% else %}<p class="error">This proposal was not written: {{ rec.error }}</p>{% endif %}
+  </div>
+  {% else %}<p class="meta">This step has not finished yet.</p>{% endfor %}
+</section>
+
+<section id="decide">
+  <h2>⑤ Your call</h2>
+  <p class="lead">This report only lays out the material. Answer these four questions before deciding whether to put months into it.</p>
+  <div class="card"><ul class="checklist">
+    <li><label><input type="checkbox">Have I opened and read the body of every paper the reviewers said overlaps? Does it still overlap?</label></li>
+    <li><label><input type="checkbox">What cause of death did several reviewers raise? Do I have a way around it?</label></li>
+    <li><label><input type="checkbox">Before starting the falsification experiment, did I write down "the result that means I give up"?</label></li>
+    <li><label><input type="checkbox">Did I finish it within three days? What was the result?</label></li>
+  </ul>
+  <p class="meta">Watch the experiments yourself while they run: the next good question is often hiding in what you can't explain.</p></div>
+</section>
+
+<section id="appendix">
+  <h2>Appendix</h2>
+  <h3>Models used at each step</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Step</th><th>Model</th></tr></thead>
+    <tbody>
+      <tr><td>Plan queries</td><td>{{ cfg.provider("planner").describe(lang) }}</td></tr>
+      <tr><td>Screen by abstract</td><td>{{ cfg.provider("screener").describe(lang) }}</td></tr>
+      <tr><td>Read full texts, rate quality</td><td>{{ cfg.provider("reader").describe(lang) }}</td></tr>
+      <tr><td>Find gaps</td><td>{{ cfg.provider("miner").describe(lang) }}</td></tr>
+      <tr><td>Mine new directions, write proposals (Model A)</td><td>{{ cfg.provider("writer").describe(lang) }}</td></tr>
+      <tr><td>Meta review (Models B, C, D…)</td><td>{% for p in cfg.reviewer_providers() %}{{ p.describe(lang) }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+      <tr><td>Summarize reviews</td><td>{{ cfg.provider("chair").describe(lang) }}</td></tr>
+    </tbody>
+  </table></div>
+  {% if usage %}
+  <h3>Usage</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Model</th><th class="num">Calls</th><th class="num">Input tokens</th><th class="num">Output tokens</th></tr></thead>
+    <tbody>{% for name, u in usage.items() %}<tr><td>{{ name }} <span class="meta">{{ u.model }}</span></td><td class="num">{{ u.calls }}</td><td class="num">{{ "{:,}".format(u.input_tokens) }}</td><td class="num">{{ "{:,}".format(u.output_tokens) }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  <h3>Prompts</h3>
+  {% for name, text in prompt_texts %}
+  <details class="paper"><summary><span class="title">{{ name }}</span></summary><div class="body"><pre>{{ text }}</pre></div></details>
+  {% endfor %}
+  <p class="meta">Run directory: <code>{{ run_dir }}</code>. The raw output of every step is stored there as JSON.</p>
+</section>
+
+</main>
+<footer><div class="wrap">
+  This report only helps you find blind spots. Verify every paper and judgment the AI gives you by opening the source yourself; the decision is yours.
+</div></footer>
+</body>
+</html>
