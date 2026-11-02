@@ -208,6 +208,26 @@ def test_next_stops_at_the_evidence_gate_until_forced(tmp_path, capsys):
     assert "06_landscape.json" in out and "空白最多 3 个" in out
 
 
+def test_site_copy_for_publishing_has_no_local_paths(tmp_path, capsys):
+    """--site 另写一份发布用的报告：本机路径（运行目录、本地 PDF）都不出现，也不让搜索引擎收录。"""
+    run = make_run(tmp_path, ok=("P01", "P02"))
+    fulltexts = json.loads((run / "04_fulltext.json").read_text(encoding="utf-8"))
+    fulltexts["P01"]["pdf_path"] = "papers/P01.pdf"
+    (run / "04_fulltext.json").write_text(json.dumps(fulltexts, ensure_ascii=False), encoding="utf-8")
+    write_notes(run, {"P01": "high", "P02": "medium"})
+    run_ir("next", str(run))
+    capsys.readouterr()
+    assert skill_report.main([str(run), "--site"]) == 0
+    assert "只发布" in capsys.readouterr().out
+    report = (run / "report.html").read_text(encoding="utf-8")
+    site = (run / "site" / "index.html").read_text(encoding="utf-8")
+    assert str(run) in report and "本地 PDF" in report and "noindex" not in report
+    assert str(tmp_path) not in site and "本地 PDF" not in site
+    assert "<code>papers/</code>" in site and '<meta name="robots" content="noindex, nofollow">' in site
+    assert "文献证据不够，停在了第 5 步" in site and 'id="theme-toggle"' in site
+    assert list((run / "site").iterdir()) == [run / "site" / "index.html"]
+
+
 def test_all_low_quality_papers_also_stop(tmp_path, capsys):
     run = make_run(tmp_path)
     write_notes(run, {"P01": "low", "P02": "low", "P03": "low"})

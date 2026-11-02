@@ -35,7 +35,7 @@ description: 给一个还很粗糙的研究 idea 做文献调研和可行性审�
 uv run SKILL_DIR/scripts/ir.py init RUN --idea "用户的 idea 原文" --lang zh --writer anthropic --writer-model "你的模型名"
 ```
 
-`--writer` 填你自己是哪家的模型：Claude 填 anthropic，GPT / Codex 填 openai，Gemini 填 google，其他填 other。元评审要换别家的模型，这一项决定排除谁。
+`--writer` 填你自己是哪家的模型：Claude 填 anthropic，GPT / Codex 填 openai，Gemini 填 google，其他（比如 WorkBuddy 里的混元）填 other。元评审要换别家的模型，这一项决定排除谁。
 
 **1. 拆检索词**：写 `RUN/01_plan.json`。要求见 references/steps.md 第 1 节。
 
@@ -75,6 +75,21 @@ python3 SKILL_DIR/scripts/report.py RUN
 
 把报告路径告诉用户（浏览器打开）。回复里简短说清：读了几篇全文、质量怎么分布、找到几个空白、几家评审都提到的问题是什么。不要替用户下"值得做"或"不值得做"的结论，拍板的是用户。
 
+**12. 在 WorkBuddy 里：发布成网页应用**
+
+只在 WorkBuddy 里做，也就是有"发布为应用" skill 和 `workbuddy_sites_deploy` 工具的时候。别的 agent 跳过这一步。
+
+```bash
+python3 SKILL_DIR/scripts/report.py RUN --site
+```
+
+它另写一份 `RUN/site/index.html`：内容和报告一样，但不出现本机路径，也不让搜索引擎收录。然后：
+
+- 用户在最近一条消息里说了要发布（发布、上线、生成分享链接之类），就按"发布为应用" skill 发布。没说就问一句：要不要发布成在线链接？拿到链接的人都能打开，里面有 idea 原文。等用户点头再发。
+- `directory` 填 `RUN/site` 的绝对路径，`language` 填 `static`，`appName` 用 12 个字以内概括这次的 idea，比如「问卷代答评审」。
+- 只发布 `RUN/site`，不要发布整个运行目录：那里有论文 PDF（版权归出版方）、原始 JSON 和本机路径。
+- 报告改过以后要同步到线上：重新运行 `report.py RUN --site`，再发布同一个目录，链接不变。覆盖线上内容前同样要先问。
+
 ## 每一步都要守的规矩
 
 - **不编造**：论文、页码、数字、结论都要来自全文或检索结果。拿不准就写拿不准。
@@ -101,6 +116,7 @@ python3 SKILL_DIR/scripts/report.py RUN
 | `09_meta_reviews.json`、`usage.json` | review | 元评审、评审用量 |
 | `10_chair.json` | 你 | 评审意见汇总 |
 | `report.html` | report.py | 报告 |
+| `site/index.html` | report.py --site | 发布用的报告副本，不含本机路径 |
 
 ## 参考文件
 

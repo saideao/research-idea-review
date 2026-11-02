@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """把运行目录里各步的 JSON 渲染成一个自包含的 HTML 报告（样式和命令行版一样）。只用标准库。
 
-  report.py RUN
+  report.py RUN           写 RUN/report.html
+  report.py RUN --site    另写一份 RUN/site/index.html，用来发布成网页（比如 WorkBuddy 的"发布为应用"）
 """
 from __future__ import annotations
 
+import argparse
 import html
 import json
 import re
@@ -213,7 +215,8 @@ def overlap_tally(metas: list[dict], by_id: dict[str, dict]) -> tuple[int, list[
     return len(done), sorted(rows.values(), key=lambda r: (-len(r["by"]), not r["paper_id"], r["paper_id"], r["title"]))
 
 
-def build(run: Run) -> Path:
+def build(run: Run, site: bool = False) -> Path:
+    """site=True 时写发布用的副本：不出现本机路径（运行目录只写名字，不列本地 PDF），并要求搜索引擎不收录。"""
     meta = run.meta()
     lang = meta.get("lang", "zh")
     t, lv, kinds_t = T[lang], LEVEL[lang], TX[lang]["paper_types"]
@@ -282,14 +285,15 @@ def build(run: Run) -> Path:
     stopped = bool(shortfall and not landscape)
     strong_ids = {p["paper_id"] for p, r in read if r["review"]["quality"]["tier"] in ("high", "medium")}
     weak_gaps = {i for i, g in enumerate(gaps, start=1) if not any(e["paper_id"] in strong_ids for e in g["evidence"])}
-    papers_dir, run_dir = esc(f"{run.dir}/papers/"), esc(str(run.dir))
+    papers_dir, run_dir = (esc("papers/"), esc(run.dir.name)) if site else (esc(f"{run.dir}/papers/"), esc(str(run.dir)))
 
     out: list[str] = []
     w = out.append
     css, js = (re.sub(r"/\*.*?\*/\s*", "", (SKILL_DIR / "assets" / name).read_text(encoding="utf-8"), flags=re.S)
                for name in ("report.css", "report.js"))
     w(f'<!doctype html>\n<html lang="{t["html_lang"]}">\n<head>\n<meta charset="utf-8">\n'
-      f'<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>{t["title"]}</title>\n<style>\n{css}\n</style>\n<script>\n{js}</script>\n</head>\n<body>\n')
+      f'<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+      + ('<meta name="robots" content="noindex, nofollow">\n' if site else "") + f'<title>{t["title"]}</title>\n<style>\n{css}\n</style>\n<script>\n{js}</script>\n</head>\n<body>\n')
 
     # ---------- 页头 ----------
     w(f'<header class="hero"><div class="wrap">\n<div class="eyebrow">{t["title"]} · {esc(meta.get("created", "").replace("T", " "))}</div>\n')
@@ -372,7 +376,7 @@ def build(run: Run) -> Path:
             r, q = rec["review"], rec["review"]["quality"]
             avb, kind, pid = r["abstract_vs_body"], kind_label(q), esc(p["paper_id"])
             f = fulltexts.get(p["paper_id"]) or {}
-            pdf = str(run.file(f["pdf_path"])) if f.get("pdf_path") else (p.get("local_path") or "")
+            pdf = "" if site else str(run.file(f["pdf_path"])) if f.get("pdf_path") else (p.get("local_path") or "")
             authors = t["sep"].join(p.get("authors", [])[:6]) + (t["etal"] if len(p.get("authors", [])) > 6 else "")
             meta_line = " · ".join(x for x in [esc(authors) if authors else "",
                                                f'<a href="{esc(p["url"])}" target="_blank" rel="noopener">{t["link"]}</a>' if p.get("url") else "",
@@ -552,22 +556,27 @@ def build(run: Run) -> Path:
     w(f'<p class="meta">{t["run_dir"].format(run=run_dir)}</p></section>\n</main>\n'
       f'<footer><div class="wrap">{t["footer"]}</div></footer>\n</body>\n</html>\n')
 
-    path = run.dir / "report.html"
+    path = run.dir / "site" / "index.html" if site else run.dir / "report.html"
+    path.parent.mkdir(exist_ok=True)
     path.write_text("".join(out), encoding="utf-8")
     return path
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 1:
-        print("用法：report.py RUN", file=sys.stderr)
-        return 2
+    parser = argparse.ArgumentParser(prog="report.py", description="把运行目录渲染成 HTML 报告")
+    parser.add_argument("run", help="运行目录")
+    parser.add_argument("--site", action="store_true", help="另写一份 RUN/site/index.html，不含本机路径，用来发布成网页")
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        path = build(Run(argv[0]))
+        run = Run(args.run)
+        path = build(run)
+        site = build(run, site=True) if args.site else None
     except Stop as e:
         print(e, file=sys.stderr)
         return 1
     print(f"报告：{path}")
+    if site:
+        print(f"发布用的网页：{site}（只发布 {site.parent} 这个目录，别发布整个运行目录：里面有论文 PDF 和本机路径）")
     return 0
 
 

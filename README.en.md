@@ -43,9 +43,11 @@ Install it in Claude Code:
 cp -r skill/idea-review ~/.claude/skills/
 ```
 
-To use it in one project only, copy it into that project's `.claude/skills/` instead. For other tools that support Agent Skills, put it in their skills directory. It needs network access and Python 3.10 or later; uv is best (it installs pypdf for PDF text extraction automatically), otherwise install pypdf or poppler.
+To use it in one project only, copy it into that project's `.claude/skills/` instead. For WorkBuddy, copy it into `~/.workbuddy/skills/`. For other tools that support Agent Skills, put it in their skills directory. It needs network access and Python 3.10 or later; uv is best (it installs pypdf for PDF text extraction automatically), otherwise install pypdf or poppler.
 
 Once installed, tell the agent "use idea-review on this idea: …". The reading step makes the agent read several full texts, which uses a fair share of your quota; it reads 8 by default, and you can ask for fewer. The skill's instructions are written in Chinese; if you talk to the agent in English, the notes and report are written in English.
+
+In WorkBuddy, the report can also be published as a web app that anyone with the share link can open in a browser. What gets published is a separate copy (`report.py RUN --site`) with no local paths or paper PDFs, marked so search engines do not index it. WorkBuddy asks you before publishing; to publish right after the review, say so in your request, e.g. "publish the report as a web page when you are done".
 
 ## Install
 
@@ -282,3 +284,31 @@ uv run pytest
 ```
 
 The tests do not use the network: they run the whole pipeline with fake search results and mock models. The skill's scripts are tested in `tests/test_skill.py`, with fake reviewer command-line tools.
+
+## Changelog
+
+### 2026-11-02
+
+- WorkBuddy support. Copy the skill into `~/.workbuddy/skills/` and the models in WorkBuddy (Hunyuan hy3, for example) can run the whole pipeline. After the review, the report can be published as a web app with a share link. What gets published is a separate copy written by `report.py RUN --site`, with no local paths or paper PDFs, marked so search engines do not index it.
+
+  Example: start a new task in WorkBuddy, pick a workspace and a model, and paste the text below. It is a low-cost trial run: 12 candidates, 3 papers read in full, 1 proposal, and a single meta review from codex's small model. For real use, drop the count options, and you can ask more reviewers.
+
+  ```text
+  Use the idea-review skill to review a research idea: use large language models to explain compiler error messages to novice programmers, and see whether it helps them fix their code faster. This is a low-cost trial, so please: put the run directory in an idea-review-runs folder in the current workspace; pass --writer other --writer-model hy3 --candidates 12 --refs 3 --ideas 1 to init; use only codex's small model for the meta review (ir.py review RUN --reviewer codex:gpt-6-luna), and I agree to this call; use python3 if uv is not available. When the review is done, write the report, then publish it as a web app and give me the share link.
+  ```
+
+  Typing `/` in WorkBuddy's input box opens its skill menu, so the example writes the folder name without a slash. The last sentence asks to publish, so WorkBuddy publishes right away; without it, WorkBuddy asks you first.
+- Gaps no longer ask the model whether they have "already been done". Each gap lists the closest papers read and English search queries for you to check yourself.
+- The report counts, in code, which papers each reviewer named as overlapping; papers named by only one reviewer are marked as unstable.
+- The report has a light/dark toggle.
+
+### 2026-11-01
+
+- New skill version for code agents such as Claude Code and Codex.
+- Stop when too few full texts are read or all are low quality, instead of forcing gaps out. Quality is judged by paper type.
+- When the downloadable full texts run out, take more candidates from the search results automatically.
+- Use the Claude Code, Codex or Gemini CLI subscription on your machine directly.
+
+### 2026-10-31
+
+- First version.

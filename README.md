@@ -43,9 +43,11 @@
 cp -r skill/idea-review ~/.claude/skills/
 ```
 
-只想在某个项目里用，就复制到那个项目的 `.claude/skills/` 下。其他支持 Agent Skills 的工具，放进它们各自的 skills 目录。需要能联网、有 Python 3.10 以上；装了 uv 最好（会自动装抽 PDF 文字用的 pypdf），没有的话装 pypdf 或 poppler 都行。
+只想在某个项目里用，就复制到那个项目的 `.claude/skills/` 下。在 WorkBuddy 里用，复制到 `~/.workbuddy/skills/`。其他支持 Agent Skills 的工具，放进它们各自的 skills 目录。需要能联网、有 Python 3.10 以上；装了 uv 最好（会自动装抽 PDF 文字用的 pypdf），没有的话装 pypdf 或 poppler 都行。
 
 装好以后在 agent 里说"用 idea-review 帮我看看这个 idea：……"。精读那一步 agent 要读好几篇全文，比较费额度；默认精读 8 篇，可以让它调小。skill 的说明文件是中文写的，跟它说英文的话，笔记和报告会用英文写。
+
+在 WorkBuddy 里，报告还能发布成网页应用，拿到分享链接的人在浏览器里就能看。发布的是另外生成的一份副本（`report.py RUN --site`），不含本机路径和论文 PDF，也不让搜索引擎收录。发布前 WorkBuddy 会先问你；评审完想直接发布，就在请求里说一句"评审完发布成网页"。
 
 ## 安装
 
@@ -282,3 +284,31 @@ uv run pytest
 ```
 
 测试不联网，用假的检索结果和 mock 模型把整条流程跑一遍。skill 版的脚本在 `tests/test_skill.py` 里测，评审用的命令行工具换成了假的。
+
+## 更新记录
+
+### 2026-11-02
+
+- 支持 WorkBuddy。把 skill 复制到 `~/.workbuddy/skills/`，就能用 WorkBuddy 里的模型（比如混元 hy3）跑完整个流程。评审完还能把报告发布成网页应用，拿到分享链接。发布的是 `report.py RUN --site` 另外生成的副本，不含本机路径和论文 PDF，也不让搜索引擎收录。
+
+  示例：在 WorkBuddy 里新建任务，选好工作空间和模型，贴这段话。这是一次低开销的试跑：只取 12 篇候选、精读 3 篇、写 1 份 proposal，元评审只请 codex 的小模型评一次。正式用时去掉这些数量参数，评审也可以多请几家。
+
+  ```text
+  用 idea-review 这个 skill 帮我评审一个研究 idea：用大语言模型给编程初学者解释编译报错信息，能不能让他们更快把代码改对。这是一次低开销的测试，请这样设置：运行目录放在当前工作空间下的 idea-review-runs 文件夹里；init 时加 --writer other --writer-model hy3 --candidates 12 --refs 3 --ideas 1；元评审只用 codex 的小模型（ir.py review RUN --reviewer codex:gpt-6-luna），这一次调用我同意；没有 uv 就用 python3。评审完出报告，再把报告发布成网页应用，给我分享链接。
+  ```
+
+  WorkBuddy 的输入框里一打 `/` 就会弹出技能菜单，所以示例里的目录名没有写斜杠。最后一句说了"发布"，WorkBuddy 才会直接发布；没说的话，它会先问你。
+- 空白不再让模型判断"有没有人做过"，改为列出读过的论文里离它最近的几篇，和给你自己补查的英文检索式。
+- 几家评审把哪些论文列为撞车，由程序统计，只有一家提到的标成不稳。
+- 报告可以切换浅色和深色。
+
+### 2026-11-01
+
+- 新增 skill 版，可以装进 Claude Code、Codex 这类 code agent 使用。
+- 读到的全文太少或者全是低质量时停下，不再硬找空白。质量按论文类型分开评。
+- 能下载的全文不够时，自动从检索结果里多取候选。
+- 可以直接用本机 Claude Code、Codex、Gemini CLI 的订阅。
+
+### 2026-10-31
+
+- 第一版。
