@@ -344,6 +344,50 @@ def test_review_calls_other_companies_and_report_is_complete(tmp_path, capsys, o
     assert "codex" in html and "停在了第 5 步" not in html and 'id="gap-G3"' in html and 'id="gap-G4"' not in html
 
 
+CODEBUDDY_OK = f"""
+review = {json.dumps(mock_json("MetaReview"), ensure_ascii=False)!r}
+assert "CODEBUDDY_API_KEY" not in os.environ and os.environ["CODEBUDDY_DISABLE_AUTO_MEMORY"] == "1"
+assert '"causes_of_death"' in stdin   # schema 写在提示词里
+leftover = os.path.join(os.environ["HOME"], ".codebuddy", "projects", "private-tmp-" + os.path.basename(os.getcwd()))
+os.makedirs(leftover, exist_ok=True)
+print(json.dumps([{{"type": "message", "role": "user", "content": []}},
+                  {{"type": "message", "role": "assistant", "content": [], "providerData": {{"model": "hy3"}}}},
+                  {{"type": "result", "subtype": "success", "is_error": False, "result": "```json\\n" + review + "\\n```",
+                    "usage": {{"input_tokens": 900, "output_tokens": 150}}}}]))
+"""
+
+
+def test_codebuddy_reviews_with_hunyuan_and_counts_as_tencent(tmp_path, capsys, only_fake_clis, monkeypatch):
+    """codebuddy 默认用混元 hy3，算腾讯；换成别家的模型就按模型名算。写 proposal 的是混元时不推荐它。"""
+    assert ir.api_family("hy3") == ir.api_family("hy4-preview") == ir.api_family("hunyuan-turbos") == "tencent"
+    assert ir.api_family("hybrid-model") == "other"
+    run = walk_to_proposals(tmp_path, capsys)
+    fake_cli(tmp_path, "codebuddy", CODEBUDDY_OK)
+    assert ir.Reviewer("codebuddy", 60).family == "tencent"
+    assert ir.Reviewer("codebuddy:gpt-5.6-luna", 60).family == "openai"
+    monkeypatch.setenv("CODEBUDDY_API_KEY", "test-key")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    run_ir("next", str(run))
+    assert "--reviewer codebuddy" in capsys.readouterr().out
+
+    assert run_ir("review", str(run), "--reviewer", "codebuddy") == 0
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert len(calls) == 3
+    for c in calls:
+        argv = c["argv"]
+        assert argv[argv.index("--model") + 1] == "hy3" and argv[argv.index("--tools") + 1] == "" and "--json-schema" not in argv and "--no-session-persistence" in argv
+    metas = json.loads((run / "09_meta_reviews.json").read_text())
+    assert all(m["review"] and m["family"] == "tencent" and m["model"] == "hy3" for m in metas)
+    assert json.loads((run / "usage.json").read_text())["codebuddy"]["calls"] == 3
+    assert list((tmp_path / "home" / ".codebuddy" / "projects").iterdir()) == []   # 它留下的空文件夹删掉了
+
+    assert run_ir("init", str(run), "--writer", "tencent") == 0
+    (run / "09_meta_reviews.json").unlink()
+    capsys.readouterr()
+    run_ir("next", str(run))
+    assert "--reviewer codebuddy" not in capsys.readouterr().out
+
+
 def test_two_reviewers_need_a_chair_summary(tmp_path, capsys, only_fake_clis):
     run = walk_to_proposals(tmp_path, capsys)
     fake_cli(tmp_path, "codex", CODEX_OK)

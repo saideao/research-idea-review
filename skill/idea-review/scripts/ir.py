@@ -52,17 +52,20 @@ LONG_TEXT = 60000
 MAX_PDF_BYTES = 40 * 1024 * 1024
 NO_LINK = "没有开放获取的 PDF 链接"
 LANGUAGES = {"zh": "中文", "en": "English"}
-FAMILIES = ("anthropic", "openai", "google", "other")
+FAMILIES = ("anthropic", "openai", "google", "tencent", "other")
 
 S2_FIELDS = "title,abstract,year,venue,citationCount,externalIds,openAccessPdf,authors,url,publicationTypes,journal"
 _STOP = {"a", "an", "the", "of", "for", "and", "or", "in", "on", "to", "with", "by", "via", "using", "from", "is", "are"}
 _REFS = re.compile(r"\n\s*(?:\d+\.?\s*)?(References|REFERENCES|Bibliography|BIBLIOGRAPHY|参考文献)\s*\n")
 
-# 评审用的命令行工具。调用时去掉 API key 环境变量，让它们走订阅
+# 评审用的命令行工具。调用时去掉 API key 环境变量，让它们走订阅。
+# codebuddy（腾讯 CodeBuddy，和 WorkBuddy 同一套）也能调别家的模型，所以按模型名定是哪家，默认用混元 hy3
 REVIEWERS = {
     "claude": {"family": "anthropic", "exe": "claude", "keys": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")},
     "codex": {"family": "openai", "exe": "codex", "keys": ("OPENAI_API_KEY", "CODEX_API_KEY")},
     "gemini": {"family": "google", "exe": "gemini", "keys": ("GEMINI_API_KEY", "GOOGLE_API_KEY")},
+    "codebuddy": {"family": None, "exe": "codebuddy", "keys": ("CODEBUDDY_API_KEY", "CODEBUDDY_AUTH_TOKEN"), "model": "hy3",
+                  "env": {"CODEBUDDY_DISABLE_AUTO_MEMORY": "1"}},
 }
 API_ENV = ("IDEA_REVIEW_API_BASE", "IDEA_REVIEW_API_KEY", "IDEA_REVIEW_API_MODEL")
 
@@ -641,7 +644,7 @@ def cmd_init(args) -> None:
     if not args.idea:
         raise Stop("第一次建目录要用 --idea 给出研究 idea")
     if not args.writer:
-        raise Stop("要用 --writer 说明你自己是哪家的模型（anthropic / openai / google / other），元评审要换别家的模型")
+        raise Stop(f"要用 --writer 说明你自己是哪家的模型（{' / '.join(FAMILIES)}），元评审要换别家的模型")
     run.dir.mkdir(parents=True, exist_ok=True)
     meta = {
         "idea": args.idea.strip(),
@@ -818,7 +821,11 @@ def max_gaps(n_read: int) -> int:
 
 def available_reviewers(writer_family: str | None = None) -> list[tuple[str, str, bool]]:
     """本机能用的评审：(名字, 公司, 是不是和写 proposal 的同一家)。"""
-    found = [(name, info["family"], info["family"] == writer_family) for name, info in REVIEWERS.items() if shutil.which(info["exe"])]
+    found = []
+    for name, info in REVIEWERS.items():
+        if shutil.which(info["exe"]):
+            family = info["family"] or api_family(info["model"])
+            found.append((name, family, family == writer_family))
     if os.environ.get("IDEA_REVIEW_API_BASE") and os.environ.get("IDEA_REVIEW_API_KEY"):
         family = api_family(os.environ.get("IDEA_REVIEW_API_MODEL", ""))
         found.append(("api", family, family == writer_family))
@@ -968,7 +975,7 @@ def cmd_next(args) -> None:
             return step(f"请别家的模型做元评审：ir.py review {run.dir} {names}\n"
                         f"  本机能用的别家评审：{'、'.join(f'{r[0]}（{r[1]}）' for r in avail)}。先告诉用户要调用哪几个，"
                         "这会用掉对应工具的订阅额度或 API 费用。每份可能要几分钟，放到后台跑。")
-        return step("本机没找到别家公司的命令行工具（claude / codex / gemini），也没配 IDEA_REVIEW_API_*。"
+        return step(f"本机没找到别家公司的命令行工具（{' / '.join(REVIEWERS)}），也没配 IDEA_REVIEW_API_*。"
                     "问用户要不要装一个并登录；都不行的话，按 references/steps.md 第 9 节的\"没有别家模型时\"用子代理代评，报告里会标明是同一家的模型。")
     failed = [m for m in metas if not m.get("review")]
     if failed:
@@ -999,9 +1006,11 @@ def api_family(model: str) -> str:
     for key, family in (("claude", "anthropic"), ("gpt", "openai"), ("o1", "openai"), ("o3", "openai"), ("o4", "openai"),
                         ("gemini", "google"), ("deepseek", "deepseek"), ("qwen", "alibaba"), ("glm", "zhipu"),
                         ("kimi", "moonshot"), ("moonshot", "moonshot"), ("grok", "xai"), ("mistral", "mistral"),
-                        ("llama", "meta"), ("minimax", "minimax"), ("doubao", "bytedance")):
+                        ("llama", "meta"), ("minimax", "minimax"), ("doubao", "bytedance"), ("hunyuan", "tencent")):
         if key in m:
             return family
+    if re.match(r"(.*/)?hy\d", m):   # 混元：hy3、hy4-preview
+        return "tencent"
     return os.environ.get("IDEA_REVIEW_API_FAMILY", "other")
 
 
@@ -1031,13 +1040,13 @@ class Reviewer:
                 raise Stop("用 api 评审要写明模型：--reviewer api:模型名，或者设置 IDEA_REVIEW_API_MODEL")
             self.family = api_family(self.model)
         else:
-            self.model = model
-            self.family = REVIEWERS[name]["family"]
+            self.model = model or REVIEWERS[name].get("model", "")
+            self.family = REVIEWERS[name]["family"] or api_family(self.model)
             if not shutil.which(REVIEWERS[name]["exe"]):
                 raise Stop(f"本机没有 {REVIEWERS[name]['exe']} 命令，先安装并登录")
         self.lock = threading.Semaphore(2)
         self.usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0}
-        self.used_model = model
+        self.used_model = self.model
 
     @property
     def label(self) -> str:
@@ -1070,8 +1079,21 @@ class Reviewer:
                 if self.model:
                     args += ["-m", self.model]
                 return self._parse_codex(*self._run(args + ["-"], f"{system}\n\n{user}", work), answer)
-            prompt = (f"{system}\n\n{user}\n\n---\n{TX[lang]['json_instruction'].format(name='MetaReview')}\n"
-                      f"{json.dumps(schema, ensure_ascii=False)}")
+            json_prompt = (f"\n\n---\n{TX[lang]['json_instruction'].format(name='MetaReview')}\n"
+                           f"{json.dumps(schema, ensure_ascii=False)}")
+            if self.name == "codebuddy":
+                # 不用 --json-schema：它要模型调一个工具交结果，混元会把嵌套的对象写成字符串，校验不过就反复重试。
+                # 所以和 gemini 一样把格式写进提示词，关掉所有工具，从回答里取 JSON。也不读用户设置、不留会话记录
+                args = ["codebuddy", "-p", "--output-format", "json", "--system-prompt", system, "--tools", "",
+                        "--setting-sources", "", "--no-session-persistence", "--model", self.model]
+                try:
+                    return self._parse_codebuddy(*self._run(args, user + json_prompt, work))
+                finally:
+                    # 它会按工作目录在 ~/.codebuddy/projects 下建一个空文件夹，用完删掉
+                    for d in (Path.home() / ".codebuddy" / "projects").glob(f"*{work.name}"):
+                        if d.is_dir() and not any(d.iterdir()):
+                            d.rmdir()
+            prompt = f"{system}\n\n{user}{json_prompt}"
             args = ["gemini", "-p", "", "-o", "json", "--skip-trust", "--approval-mode", "plan"]
             if self.model:
                 args += ["-m", self.model]
@@ -1079,6 +1101,7 @@ class Reviewer:
 
     def _run(self, args: list[str], stdin: str, cwd: Path) -> tuple[str, str, int]:
         env = {k: v for k, v in os.environ.items() if k not in REVIEWERS[self.name]["keys"]}
+        env.update(REVIEWERS[self.name].get("env", {}))
         try:
             proc = subprocess.run(args, input=stdin.encode("utf-8"), capture_output=True, cwd=cwd, env=env, timeout=self.timeout)
         except subprocess.TimeoutExpired:
@@ -1094,8 +1117,26 @@ class Reviewer:
             data = json.loads(stdout)
         except json.JSONDecodeError:
             raise self._failed("没有输出预期的 JSON", stderr or stdout, code) from None
+        return self._result(data, next(iter(data.get("modelUsage") or {}), None))
+
+    def _parse_codebuddy(self, stdout: str, stderr: str, code: int) -> str:
+        """codebuddy 输出整段对话的列表，最后一条 type 为 result，其余字段和 claude 一样。"""
+        try:
+            items = json.loads(stdout)
+        except json.JSONDecodeError:
+            raise self._failed("没有输出预期的 JSON", stderr or stdout, code) from None
+        items = items if isinstance(items, list) else [items]
+        result = next((m for m in reversed(items) if isinstance(m, dict) and m.get("type") == "result"), None)
+        if result is None:
+            raise self._failed("输出里没有 result", stderr or stdout[-400:], code)
+        model = next((m["providerData"].get("model") for m in reversed(items)
+                      if isinstance(m, dict) and m.get("role") == "assistant" and isinstance(m.get("providerData"), dict)), None)
+        return self._result(result, model)
+
+    def _result(self, data: dict, model: str | None) -> str:
+        """claude 和 codebuddy 共用：记用量，取结构化输出。"""
         usage = data.get("usage") or {}
-        self.add_usage(next(iter(data.get("modelUsage") or {}), None),
+        self.add_usage(model,
                        sum(usage.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")),
                        usage.get("output_tokens"))
         if data.get("is_error"):
@@ -1258,7 +1299,7 @@ def cmd_review(args) -> None:
 def cmd_reviewers(args) -> None:
     found = available_reviewers(args.writer)
     if not found:
-        print("本机没找到 claude / codex / gemini 命令，也没配 IDEA_REVIEW_API_BASE 和 IDEA_REVIEW_API_KEY。")
+        print(f"本机没找到 {' / '.join(REVIEWERS)} 命令，也没配 IDEA_REVIEW_API_BASE 和 IDEA_REVIEW_API_KEY。")
         return
     for name, family, same in found:
         print(f"  {name}（{family}）" + ("  ← 和你是同一家，不适合做评审" if same else ""))

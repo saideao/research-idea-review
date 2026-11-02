@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tomllib
 from dataclasses import dataclass, field, fields
@@ -9,13 +10,20 @@ from pathlib import Path
 
 from .texts import LANGS
 
-PROVIDER_TYPES = ("anthropic", "openai_compatible", "claude_code", "codex", "gemini_cli", "mock")
+PROVIDER_TYPES = ("anthropic", "openai_compatible", "claude_code", "codex", "gemini_cli", "codebuddy", "mock")
 # 调用本机 code agent 命令行、走它登录的订阅的几种类型：默认命令名和默认 family
 AGENT_CLIS = {
     "claude_code": ("claude", "anthropic"),
     "codex": ("codex", "openai"),
     "gemini_cli": ("gemini", "google"),
+    "codebuddy": ("codebuddy", "tencent"),
 }
+# codebuddy（腾讯 CodeBuddy，和 WorkBuddy 同一套）不填 model 时用混元 hy3。它也能调别家的模型，所以 family 按模型名定
+CODEBUDDY_DEFAULT_MODEL = "hy3"
+_MODEL_FAMILIES = (("claude", "anthropic"), ("gpt", "openai"), ("o1", "openai"), ("o3", "openai"), ("o4", "openai"),
+                   ("gemini", "google"), ("deepseek", "deepseek"), ("qwen", "alibaba"), ("glm", "zhipu"),
+                   ("kimi", "moonshot"), ("moonshot", "moonshot"), ("grok", "xai"), ("mistral", "mistral"),
+                   ("llama", "meta"), ("minimax", "minimax"), ("doubao", "bytedance"), ("hunyuan", "tencent"))
 ROLE_NAMES = ("planner", "screener", "reader", "miner", "writer", "chair")
 # 检索数量的上下限：太少做不成调研，太多费用和时间会翻好几倍
 COUNT_LIMITS = {
@@ -46,7 +54,7 @@ class ProviderConfig:
     max_tokens_param: str = "max_tokens"
     extra_body: dict = field(default_factory=dict)
     concurrency: int = 4
-    # claude_code / codex / gemini_cli：命令路径（不填就用默认命令名）和每次调用最多等多少秒
+    # claude_code / codex / gemini_cli / codebuddy：命令路径（不填就用默认命令名）和每次调用最多等多少秒
     command: str | None = None
     timeout: int = 900
 
@@ -142,6 +150,17 @@ class Config:
         return out
 
 
+def model_family(model: str) -> str:
+    """按模型名猜是哪家公司的模型，认不出来就是 other。"""
+    m = model.lower()
+    for key, family in _MODEL_FAMILIES:
+        if key in m:
+            return family
+    if re.match(r"(.*/)?hy\d", m):   # 混元：hy3、hy4-preview
+        return "tencent"
+    return "other"
+
+
 def _provider(name: str, raw: dict) -> ProviderConfig:
     ptype = raw.get("type")
     if ptype not in PROVIDER_TYPES:
@@ -157,8 +176,8 @@ def _provider(name: str, raw: dict) -> ProviderConfig:
     data = dict(raw)
     if ptype in AGENT_CLIS:
         # 不填 model 就用命令行工具自己的默认模型；本机同时开太多个 agent 容易卡，也容易撞上订阅的频率限制
-        data.setdefault("model", "")
-        data.setdefault("family", AGENT_CLIS[ptype][1])
+        data.setdefault("model", CODEBUDDY_DEFAULT_MODEL if ptype == "codebuddy" else "")
+        data.setdefault("family", model_family(data["model"]) if ptype == "codebuddy" else AGENT_CLIS[ptype][1])
         data.setdefault("concurrency", 2)
     data.setdefault("family", name)
     for key in ("concurrency", "timeout"):

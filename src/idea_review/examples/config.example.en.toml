@@ -76,6 +76,10 @@ max_tokens = 8000
 # type = "gemini_cli"              # runs the gemini command (Gemini CLI) with the account it is logged in to
 # family = "google"
 
+# [providers.codebuddy_sub]
+# type = "codebuddy"               # runs the codebuddy command (Tencent CodeBuddy) with the Tencent account it is logged in to
+# model = "hy3"                    # optional, Hunyuan hy3 by default. Other companies' models it supports work too; family follows the model name
+
 [roles]
 planner = "claude"                 # plan search queries
 screener = "claude"                # screen by title and abstract (only decides which full texts to read first)

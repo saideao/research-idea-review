@@ -34,7 +34,7 @@
 
 - 读论文、找空白、写 proposal 的是你正在用的 agent 自己，用的是它的订阅，不用另外配 API key。
 - 检索、下载全文、检查格式、"证据不够就停"、调别家模型做元评审，由 skill 里的脚本完成，规则和命令行版一样。脚本只用 Python 标准库。
-- 元评审调用本机装好的别家命令行工具（codex、gemini、claude 里去掉和 agent 同一家的），或者 OpenAI 兼容接口。一家都没有时用子代理代评，报告里会标明是同一家的模型。
+- 元评审调用本机装好的别家命令行工具（codex、gemini、claude、codebuddy 里去掉和 agent 同一家的），或者 OpenAI 兼容接口。一家都没有时用子代理代评，报告里会标明是同一家的模型。
 - 运行目录里的文件格式和命令行版一样，报告样式也一样。
 
 在 Claude Code 里安装：
@@ -86,6 +86,7 @@ idea-review init
 | `claude_code` | Claude 订阅 | 调用本机的 `claude` 命令（Claude Code），不需要 API Key，见[下文](#用本机-code-agent-的订阅) |
 | `codex` | ChatGPT 订阅 | 调用本机的 `codex exec`，不需要 API Key |
 | `gemini_cli` | Gemini CLI 登录的账号 | 调用本机的 `gemini` 命令 |
+| `codebuddy` | CodeBuddy 登录的腾讯账号 | 调用本机的 `codebuddy` 命令（腾讯 CodeBuddy，和 WorkBuddy 同一套），默认用混元 hy3 |
 
 API Key 不写进配置文件，只写环境变量的名字。运行前在终端里设置：
 
@@ -109,7 +110,7 @@ idea-review check --ping
 
 ### 用本机 code agent 的订阅
 
-已经订阅了 Claude 或 ChatGPT，可以不用 API，直接让 idea-review 调用本机装好的 Claude Code、Codex。先把命令行工具装好、登录，然后在 `config.toml` 里这样写：
+已经订阅了 Claude 或 ChatGPT，或者有 CodeBuddy 的腾讯账号，可以不用 API，直接让 idea-review 调用本机装好的 Claude Code、Codex、CodeBuddy。先把命令行工具装好、登录，然后在 `config.toml` 里这样写：
 
 ```toml
 [providers.claude_sub]
@@ -131,11 +132,12 @@ chair = "codex_sub"
 
 也可以和 API 混着用，比如精读和写作用订阅，评审再加一个走 API 的别家模型。
 
-- `family` 不用填，默认分别是 `anthropic`、`openai`、`google`。
-- 调用时会去掉 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 这几个环境变量，免得命令行工具改走 API 计费。
+- `family` 不用填，默认分别是 `anthropic`、`openai`、`google`。`codebuddy` 按模型名定：hy3 这类混元模型是 `tencent`，它调的别家模型（比如 GPT）就算那一家。
+- 调用时会去掉 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`CODEBUDDY_API_KEY` 这几个环境变量，免得命令行工具改走 API 计费。
 - 每次调用都在一个空的临时目录里新开一次会话，不读你的项目文件。Claude Code 关掉了所有工具、不加载你的设置；Codex 用只读沙箱，不读 `~/.codex/config.toml`（免得每次调用都启动你配置的 MCP 服务），要指定模型就在 idea-review 的配置里写 `model`。
 - 默认同一个模型最多同时跑 2 个调用（`concurrency`），每次最多等 900 秒（`timeout`），都可以在配置里改。
 - 订阅有用量上限。一次完整运行要调用几十次模型；Codex 每次调用还会带上它自己约 2 万 token 的系统提示，比走 API 费额度。
+- `codebuddy` 要先装好（`npm install -g @tencent-ai/codebuddy-code`），运行一次 `codebuddy` 用 `/login` 登录。它的格式要求写在提示词里，不用它自带的结构化输出：混元在那种方式下会把嵌套的对象写成字符串，校验不过就反复重试，一次调用的 token 多好几倍。它的自动记忆也关掉了。
 - `gemini_cli` 是按 Gemini CLI 的文档接的，还没有实际跑通过。Gemini CLI 如果配置成用 API Key，走的还是 API 计费。
 
 ## 使用
@@ -294,10 +296,12 @@ uv run pytest
   示例：在 WorkBuddy 里新建任务，选好工作空间和模型，贴这段话。这是一次低开销的试跑：只取 12 篇候选、精读 3 篇、写 1 份 proposal，元评审只请 codex 的小模型评一次。正式用时去掉这些数量参数，评审也可以多请几家。
 
   ```text
-  用 idea-review 这个 skill 帮我评审一个研究 idea：用大语言模型给编程初学者解释编译报错信息，能不能让他们更快把代码改对。这是一次低开销的测试，请这样设置：运行目录放在当前工作空间下的 idea-review-runs 文件夹里；init 时加 --writer other --writer-model hy3 --candidates 12 --refs 3 --ideas 1；元评审只用 codex 的小模型（ir.py review RUN --reviewer codex:gpt-6-luna），这一次调用我同意；没有 uv 就用 python3。评审完出报告，再把报告发布成网页应用，给我分享链接。
+  用 idea-review 这个 skill 帮我评审一个研究 idea：用大语言模型给编程初学者解释编译报错信息，能不能让他们更快把代码改对。这是一次低开销的测试，请这样设置：运行目录放在当前工作空间下的 idea-review-runs 文件夹里；init 时加 --writer tencent --writer-model hy3 --candidates 12 --refs 3 --ideas 1；元评审只用 codex 的小模型（ir.py review RUN --reviewer codex:gpt-6-luna），这一次调用我同意；没有 uv 就用 python3。评审完出报告，再把报告发布成网页应用，给我分享链接。
   ```
 
   WorkBuddy 的输入框里一打 `/` 就会弹出技能菜单，所以示例里的目录名没有写斜杠。最后一句说了"发布"，WorkBuddy 才会直接发布；没说的话，它会先问你。
+- 元评审可以请腾讯的混元：装好 CodeBuddy 命令行（`npm install -g @tencent-ai/codebuddy-code`），运行一次 `codebuddy` 用 `/login` 登录，就能用 `--reviewer codebuddy`，默认模型 hy3。CodeBuddy 也能调别家的模型，算哪家按模型名定。写 proposal 的是混元时，`--writer` 填 `tencent`。
+- 命令行版也能用 CodeBuddy：配置里加一个 `type = "codebuddy"` 的模型，默认 hy3，见[用本机 code agent 的订阅](#用本机-code-agent-的订阅)。
 - 空白不再让模型判断"有没有人做过"，改为列出读过的论文里离它最近的几篇，和给你自己补查的英文检索式。
 - 几家评审把哪些论文列为撞车，由程序统计，只有一家提到的标成不稳。
 - 报告可以切换浅色和深色。

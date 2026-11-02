@@ -34,7 +34,7 @@ How it differs from the command-line version:
 
 - The agent you are already using reads the papers, finds the gaps and writes the proposals, on its own subscription, so there are no API keys to set up.
 - Searching, downloading full texts, format checks, "stop when the evidence is not enough" and calling other companies' models for meta review are done by the skill's scripts, with the same rules as the command-line version. The scripts use only the Python standard library.
-- Meta reviews call the other companies' command-line tools installed on your machine (codex, gemini or claude, minus the agent's own company), or an OpenAI-compatible API. If none is available, a subagent reviews instead, and the report says the reviewer is from the same company.
+- Meta reviews call the other companies' command-line tools installed on your machine (codex, gemini, claude or codebuddy, minus the agent's own company), or an OpenAI-compatible API. If none is available, a subagent reviews instead, and the report says the reviewer is from the same company.
 - The run directory uses the same file formats as the command-line version, and the report looks the same.
 
 Install it in Claude Code:
@@ -86,6 +86,7 @@ You can call APIs, or use the subscription of a code agent on your computer:
 | `claude_code` | A Claude subscription | Runs the local `claude` command (Claude Code); no API key needed, see [below](#use-a-code-agent-subscription) |
 | `codex` | A ChatGPT subscription | Runs the local `codex exec`; no API key needed |
 | `gemini_cli` | The account Gemini CLI is logged in to | Runs the local `gemini` command |
+| `codebuddy` | The Tencent account CodeBuddy is logged in to | Runs the local `codebuddy` command (Tencent CodeBuddy, the same agent as WorkBuddy); the default model is Hunyuan hy3 |
 
 API keys do not go in the config file; only the name of the environment variable does. Set them in your terminal before running:
 
@@ -109,7 +110,7 @@ idea-review check --ping
 
 ### Use a code agent subscription
 
-If you subscribe to Claude or ChatGPT, idea-review can run the Claude Code or Codex installed on your computer instead of calling an API. Install the command-line tool and log in first, then write this in `config.toml`:
+If you subscribe to Claude or ChatGPT, or have a Tencent account for CodeBuddy, idea-review can run the Claude Code, Codex or CodeBuddy installed on your computer instead of calling an API. Install the command-line tool and log in first, then write this in `config.toml`:
 
 ```toml
 [providers.claude_sub]
@@ -131,11 +132,12 @@ chair = "codex_sub"
 
 You can also mix them with APIs, e.g. use a subscription for reading and writing and add a reviewer from another company through its API.
 
-- No need to set `family`; it defaults to `anthropic`, `openai` and `google` respectively.
-- The environment variables `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY` are removed for these calls, so the tools do not switch to API billing.
+- No need to set `family`; it defaults to `anthropic`, `openai` and `google` respectively. For `codebuddy` it follows the model name: Hunyuan models such as hy3 are `tencent`, and another company's model it calls (GPT, for example) counts as that company.
+- The environment variables `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` and `CODEBUDDY_API_KEY` are removed for these calls, so the tools do not switch to API billing.
 - Each call starts a fresh session in an empty temporary folder and does not read your project files. Claude Code runs with all tools turned off and without loading your settings. Codex runs in a read-only sandbox and does not read `~/.codex/config.toml` (so it does not start the MCP servers you configured on every call); set `model` in the idea-review config to choose a model.
 - By default at most 2 calls run at once per model (`concurrency`), and each call waits at most 900 seconds (`timeout`); both can be changed in the config.
 - Subscriptions have usage limits. A full run makes dozens of model calls, and Codex adds its own system prompt of about 20,000 tokens to every call, so it uses up the quota faster than the API would.
+- Install `codebuddy` first (`npm install -g @tencent-ai/codebuddy-code`), then run `codebuddy` once and log in with `/login`. The required format goes into the prompt instead of its built-in structured output: with that, Hunyuan writes nested objects as strings, fails validation and is asked to retry again and again, which multiplies the tokens per call. Its auto memory is turned off too.
 - `gemini_cli` follows Gemini CLI's documentation but has not been run end to end yet. If Gemini CLI is set up with an API key, it is still billed as API usage.
 
 ## Usage
@@ -294,10 +296,12 @@ The tests do not use the network: they run the whole pipeline with fake search r
   Example: start a new task in WorkBuddy, pick a workspace and a model, and paste the text below. It is a low-cost trial run: 12 candidates, 3 papers read in full, 1 proposal, and a single meta review from codex's small model. For real use, drop the count options, and you can ask more reviewers.
 
   ```text
-  Use the idea-review skill to review a research idea: use large language models to explain compiler error messages to novice programmers, and see whether it helps them fix their code faster. This is a low-cost trial, so please: put the run directory in an idea-review-runs folder in the current workspace; pass --writer other --writer-model hy3 --candidates 12 --refs 3 --ideas 1 to init; use only codex's small model for the meta review (ir.py review RUN --reviewer codex:gpt-6-luna), and I agree to this call; use python3 if uv is not available. When the review is done, write the report, then publish it as a web app and give me the share link.
+  Use the idea-review skill to review a research idea: use large language models to explain compiler error messages to novice programmers, and see whether it helps them fix their code faster. This is a low-cost trial, so please: put the run directory in an idea-review-runs folder in the current workspace; pass --writer tencent --writer-model hy3 --candidates 12 --refs 3 --ideas 1 to init; use only codex's small model for the meta review (ir.py review RUN --reviewer codex:gpt-6-luna), and I agree to this call; use python3 if uv is not available. When the review is done, write the report, then publish it as a web app and give me the share link.
   ```
 
   Typing `/` in WorkBuddy's input box opens its skill menu, so the example writes the folder name without a slash. The last sentence asks to publish, so WorkBuddy publishes right away; without it, WorkBuddy asks you first.
+- Meta reviews can come from Tencent's Hunyuan: install the CodeBuddy CLI (`npm install -g @tencent-ai/codebuddy-code`), run `codebuddy` once and log in with `/login`, then use `--reviewer codebuddy`; the default model is hy3. CodeBuddy can also call other companies' models, and which company a review counts as follows the model name. When Hunyuan writes the proposals, pass `--writer tencent`.
+- The command-line version can use CodeBuddy too: add a model with `type = "codebuddy"` to the config (hy3 by default); see [Use a code agent subscription](#use-a-code-agent-subscription).
 - Gaps no longer ask the model whether they have "already been done". Each gap lists the closest papers read and English search queries for you to check yourself.
 - The report counts, in code, which papers each reviewer named as overlapping; papers named by only one reviewer are marked as unstable.
 - The report has a light/dark toggle.

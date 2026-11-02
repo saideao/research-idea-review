@@ -1,6 +1,6 @@
 ---
 name: idea-review
-description: 给一个还很粗糙的研究 idea 做文献调研和可行性审查：拆检索词，在 Semantic Scholar、arXiv、OpenAlex 上检索，按摘要初筛，下载开放获取的全文精读并评质量，找出有论文证据的空白，写 proposal，再请别家公司的模型（本机的 codex、gemini、claude 命令行工具或 OpenAI 兼容接口）做元评审，最后出一份 HTML 报告。用户说"这个 idea 有没有人做过""帮我查查相关文献""这个研究想法靠不靠谱""找找这个方向还有什么空白""把这个想法写成 proposal 再找人挑毛病"，或者 review my research idea、is this idea novel、find literature gaps 时，都用这个 skill，哪怕用户没提报告或评审。
+description: 给一个还很粗糙的研究 idea 做文献调研和可行性审查：拆检索词，在 Semantic Scholar、arXiv、OpenAlex 上检索，按摘要初筛，下载开放获取的全文精读并评质量，找出有论文证据的空白，写 proposal，再请别家公司的模型（本机的 codex、gemini、claude、codebuddy 命令行工具或 OpenAI 兼容接口）做元评审，最后出一份 HTML 报告。用户说"这个 idea 有没有人做过""帮我查查相关文献""这个研究想法靠不靠谱""找找这个方向还有什么空白""把这个想法写成 proposal 再找人挑毛病"，或者 review my research idea、is this idea novel、find literature gaps 时，都用这个 skill，哪怕用户没提报告或评审。
 ---
 
 # idea-review：查文献、找空白、写 proposal、换模型挑毛病
@@ -35,7 +35,7 @@ description: 给一个还很粗糙的研究 idea 做文献调研和可行性审�
 uv run SKILL_DIR/scripts/ir.py init RUN --idea "用户的 idea 原文" --lang zh --writer anthropic --writer-model "你的模型名"
 ```
 
-`--writer` 填你自己是哪家的模型：Claude 填 anthropic，GPT / Codex 填 openai，Gemini 填 google，其他（比如 WorkBuddy 里的混元）填 other。元评审要换别家的模型，这一项决定排除谁。
+`--writer` 填你自己是哪家的模型：Claude 填 anthropic，GPT / Codex 填 openai，Gemini 填 google，混元（比如 WorkBuddy 里的 hy3）填 tencent，其他填 other。元评审要换别家的模型，这一项决定排除谁。
 
 **1. 拆检索词**：写 `RUN/01_plan.json`。要求见 references/steps.md 第 1 节。
 
@@ -63,7 +63,7 @@ uv run SKILL_DIR/scripts/ir.py init RUN --idea "用户的 idea 原文" --lang zh
 uv run SKILL_DIR/scripts/ir.py review RUN --reviewer codex --reviewer gemini
 ```
 
-每份可能要几分钟，放到后台跑，跑完再 `next`。评审在空的临时目录里、新会话里独立完成，只看得到 proposal 和论文材料。本机一个别家的模型都没有时，见第 9 节的"没有别家模型时"。
+每份可能要几分钟，放到后台跑，跑完再 `next`。`codebuddy` 是腾讯 CodeBuddy 的命令行，默认用混元 hy3；它也能调别家的模型（`--reviewer codebuddy:模型名`），算哪家按模型名定。评审在空的临时目录里、新会话里独立完成，只看得到 proposal 和论文材料。本机一个别家的模型都没有时，见第 9 节的"没有别家模型时"。
 
 **10. 汇总**：每份 proposal 有两份及以上成功的评审时，写 `RUN/10_chair.json`。只有一份评审的跳过。见第 10 节。
 

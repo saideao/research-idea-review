@@ -3,7 +3,7 @@
 - anthropic：用官方 anthropic SDK，output_config.format 约束 JSON 结构。
 - openai_compatible：用官方 openai SDK + base_url，适用于 OpenAI、Gemini、DeepSeek、
   Kimi、通义千问、智谱 GLM、豆包等提供 OpenAI 兼容接口的服务。
-- claude_code / codex / gemini_cli：调用本机装好的 code agent 命令行，用它登录的订阅，不需要 API key。
+- claude_code / codex / gemini_cli / codebuddy：调用本机装好的 code agent 命令行，用它登录的订阅，不需要 API key。
 - mock：不联网，按 JSON Schema 造假数据，用来试跑流程和测试。
 """
 from __future__ import annotations
@@ -219,7 +219,7 @@ class OpenAICompatibleProvider(Provider):
 
 
 class AgentCLIProvider(Provider):
-    """调用本机装好的 code agent 命令行（Claude Code、Codex、Gemini CLI），用它登录的订阅，不需要 API key。
+    """调用本机装好的 code agent 命令行（Claude Code、Codex、Gemini CLI、CodeBuddy），用它登录的订阅，不需要 API key。
 
     每次调用都在一个空的临时目录里新开一次会话，不加载项目文件、插件和 MCP，只要它按 JSON 格式回答。
     """
@@ -228,7 +228,10 @@ class AgentCLIProvider(Provider):
         "claude_code": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
         "codex": ("OPENAI_API_KEY", "CODEX_API_KEY"),
         "gemini_cli": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "codebuddy": ("CODEBUDDY_API_KEY", "CODEBUDDY_AUTH_TOKEN"),
     }
+    # codebuddy 默认会往提示词里加一段自动记忆的说明，还会建记忆目录，关掉
+    EXTRA_ENVS = {"codebuddy": {"CODEBUDDY_DISABLE_AUTO_MEMORY": "1"}}
 
     async def _complete(self, system: str, user: str, schema: dict, schema_name: str, lang: str) -> str:
         with tempfile.TemporaryDirectory(prefix="idea-review-") as tmp:
@@ -241,9 +244,17 @@ class AgentCLIProvider(Provider):
                 # codex 没有单独的 system 参数，拼在前面
                 result = await self._run(self._codex_args(work, schema_path, answer), f"{system}\n\n{user}", work)
                 return self._parse_codex(*result, answer)
-            prompt = (f"{system}\n\n{user}\n\n---\n{TEXTS[lang]['json_instruction'].format(name=schema_name)}\n"
-                      f"{json.dumps(schema, ensure_ascii=False)}")
-            return self._parse_gemini(*await self._run(self._gemini_args(), prompt, work))
+            json_prompt = (f"\n\n---\n{TEXTS[lang]['json_instruction'].format(name=schema_name)}\n"
+                           f"{json.dumps(schema, ensure_ascii=False)}")
+            if self.cfg.type == "codebuddy":
+                try:
+                    return self._parse_codebuddy(*await self._run(self._codebuddy_args(system), user + json_prompt, work))
+                finally:
+                    # 它会按工作目录在 ~/.codebuddy/projects 下建一个空文件夹，用完删掉
+                    for d in (Path.home() / ".codebuddy" / "projects").glob(f"*{work.name}"):
+                        if d.is_dir() and not any(d.iterdir()):
+                            d.rmdir()
+            return self._parse_gemini(*await self._run(self._gemini_args(), f"{system}\n\n{user}{json_prompt}", work))
 
     def _claude_args(self, system: str, schema: dict) -> list[str]:
         args = [self.cfg.executable(), "-p", "--output-format", "json", "--system-prompt", system,
@@ -265,6 +276,15 @@ class AgentCLIProvider(Provider):
             args += ["-c", f'model_reasoning_effort="{self.cfg.effort}"']
         return args + ["-"]
 
+    def _codebuddy_args(self, system: str) -> list[str]:
+        # 不用 --json-schema：它要模型调一个工具交结果，混元会把嵌套的对象写成字符串，校验不过就反复重试，
+        # 一次调用的 token 多好几倍。所以和 gemini 一样把格式写进提示词，关掉所有工具，从回答里取 JSON
+        args = [self.cfg.executable(), "-p", "--output-format", "json", "--system-prompt", system, "--tools", "",
+                "--setting-sources", "", "--no-session-persistence", "--model", self.cfg.model]
+        if self.cfg.effort:
+            args += ["--effort", self.cfg.effort]
+        return args
+
     def _gemini_args(self) -> list[str]:
         args = [self.cfg.executable(), "-p", "", "-o", "json", "--skip-trust", "--approval-mode", "plan"]
         if self.cfg.model:
@@ -273,6 +293,7 @@ class AgentCLIProvider(Provider):
 
     async def _run(self, args: list[str], stdin: str, cwd: Path) -> tuple[str, str, int]:
         env = {k: v for k, v in os.environ.items() if k not in self.API_KEY_ENVS[self.cfg.type]}
+        env.update(self.EXTRA_ENVS.get(self.cfg.type, {}))
         try:
             proc = await asyncio.create_subprocess_exec(*args, cwd=cwd, env=env, stdin=asyncio.subprocess.PIPE,
                                                         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -294,8 +315,25 @@ class AgentCLIProvider(Provider):
             data = json.loads(stdout)
         except json.JSONDecodeError:
             raise self._failed("没有输出预期的 JSON", stderr or stdout, code) from None
+        return self._result(data, next(iter(data.get("modelUsage") or {}), self.cfg.model or "claude"))
+
+    def _parse_codebuddy(self, stdout: str, stderr: str, code: int) -> str:
+        """codebuddy 输出整段对话的列表，最后一条 type 为 result，其余字段和 claude 一样。"""
+        try:
+            items = json.loads(stdout)
+        except json.JSONDecodeError:
+            raise self._failed("没有输出预期的 JSON", stderr or stdout, code) from None
+        items = items if isinstance(items, list) else [items]
+        result = next((m for m in reversed(items) if isinstance(m, dict) and m.get("type") == "result"), None)
+        if result is None:
+            raise self._failed("输出里没有 result", stderr or stdout[-500:], code)
+        model = next((m["providerData"].get("model") for m in reversed(items)
+                      if isinstance(m, dict) and m.get("role") == "assistant" and isinstance(m.get("providerData"), dict)), None)
+        return self._result(result, model or self.cfg.model)
+
+    def _result(self, data: dict, model: str) -> str:
+        """claude 和 codebuddy 共用：记用量，取回答。"""
         usage = data.get("usage") or {}
-        model = next(iter(data.get("modelUsage") or {}), self.cfg.model or "claude")
         self.tracker.add(self.name, model, sum(usage.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens",
                                                                              "cache_read_input_tokens")), usage.get("output_tokens"))
         if data.get("is_error"):

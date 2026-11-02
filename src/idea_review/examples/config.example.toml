@@ -94,6 +94,10 @@ max_tokens = 8000
 # type = "gemini_cli"              # 调用 gemini 命令（Gemini CLI），用它登录的账号
 # family = "google"
 
+# [providers.codebuddy_sub]
+# type = "codebuddy"               # 调用 codebuddy 命令（腾讯 CodeBuddy），用它登录的腾讯账号
+# model = "hy3"                    # 可选，默认混元 hy3。也能填它支持的别家模型，family 按模型名定
+
 [roles]
 planner = "claude"                 # 拆检索词
 screener = "claude"                # 按标题和摘要初筛（只决定先读哪些全文）

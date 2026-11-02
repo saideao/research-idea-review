@@ -853,6 +853,34 @@ def test_gemini_cli_provider_parses_the_response(tmp_path):
     assert tracker.by_provider["agent"] == {"model": "gemini-test", "calls": 1, "input_tokens": 30, "output_tokens": 4}
 
 
+def test_codebuddy_provider_puts_the_schema_in_the_prompt(tmp_path, monkeypatch):
+    """codebuddy 默认用混元 hy3、算腾讯；格式要求写进提示词，不用 --json-schema；关掉自动记忆，删掉它留下的空文件夹。"""
+    import asyncio
+    monkeypatch.setenv("CODEBUDDY_API_KEY", "should-not-be-passed")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    command = fake_agent(tmp_path, f"""assert "CODEBUDDY_API_KEY" not in os.environ and os.environ["CODEBUDDY_DISABLE_AUTO_MEMORY"] == "1"
+os.makedirs(os.path.join(os.environ["HOME"], ".codebuddy", "projects", "private-tmp-" + os.path.basename(os.getcwd())))
+print(json.dumps([{{"type": "message", "role": "user", "content": []}},
+                  {{"type": "message", "role": "assistant", "content": [], "providerData": {{"model": "hy3"}}}},
+                  {{"type": "result", "is_error": False, "result": "```json\\n" + json.dumps({PLAN!r}) + "\\n```",
+                    "usage": {{"input_tokens": 40, "output_tokens": 6}}}}]))""")
+    provider, tracker = agent_provider("codebuddy", command)
+    assert (provider.cfg.model, provider.cfg.family) == ("hy3", "tencent")
+    plan = asyncio.run(provider.structured("系统提示", "用户提示", QueryPlan))
+    assert plan.field == "社会科学"
+    call = agent_calls(tmp_path)[0]
+    argv = call["argv"]
+    assert argv[argv.index("--system-prompt") + 1] == "系统提示" and argv[argv.index("--model") + 1] == "hy3"
+    assert argv[argv.index("--tools") + 1] == "" and "--json-schema" not in argv and "--no-session-persistence" in argv
+    assert call["stdin"].startswith("用户提示") and "JSON Schema" in call["stdin"]
+    assert tracker.by_provider["agent"] == {"model": "hy3", "calls": 1, "input_tokens": 40, "output_tokens": 6}
+    assert list((tmp_path / "home" / ".codebuddy" / "projects").iterdir()) == []
+
+    from idea_review.config import _provider, model_family
+    assert _provider("cb", {"type": "codebuddy", "model": "gpt-5.6-luna"}).family == "openai"
+    assert model_family("hy4-preview") == model_family("hunyuan-turbos") == "tencent" and model_family("hybrid") == "other"
+
+
 def test_agent_timeout_and_missing_command(tmp_path):
     import asyncio
     command = fake_agent(tmp_path, "time.sleep(5)")

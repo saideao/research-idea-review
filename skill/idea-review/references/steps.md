@@ -101,7 +101,7 @@
 
 ### 没有别家模型时
 
-先问用户要不要装一个别家的命令行工具并登录（Claude Code、Codex CLI、Gemini CLI 都行），或者设置 OpenAI 兼容接口：
+先问用户要不要装一个别家的命令行工具并登录（Claude Code、Codex CLI、Gemini CLI、CodeBuddy CLI 都行），或者设置 OpenAI 兼容接口：
 
 ```bash
 export IDEA_REVIEW_API_BASE=https://接口地址/v1
