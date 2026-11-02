@@ -566,7 +566,8 @@ class Pipeline:
         gaps_text = "\n".join(
             t["gap_line"].format(i=i, kind=g.kind, source=t["gap_source"][g.source], title=g.title, description=g.description,
                                  evidence=t["join"].join(t["gap_evidence"].format(id=e.paper_id, note=e.note) for e in g.evidence),
-                                 risk=g.already_done_risk)
+                                 closest=t["join"].join(t["gap_evidence"].format(id=c.paper_id, note=c.how_close)
+                                                        for c in g.closest_read) or t["none"])
             for i, g in enumerate(landscape.gaps, start=1)
         ) or t["no_gaps"]
 

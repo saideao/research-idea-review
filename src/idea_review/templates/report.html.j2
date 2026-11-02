@@ -7,6 +7,9 @@
 <style>
 {% include "_style.css" %}
 </style>
+<script>
+{% include "_theme.js" %}
+</script>
 </head>
 <body>
 
@@ -53,8 +56,9 @@
 </header>
 
 <nav class="toc"><div class="wrap">
-  <a href="#search">① 检索</a><a href="#papers">② 文献</a><a href="#gaps">③ 空白</a>
-  <a href="#proposals">④ 方案和评审</a><a href="#decide">⑤ 你拍板</a><a href="#appendix">附录</a>
+  <div class="links"><a href="#search">① 检索</a><a href="#papers">② 文献</a><a href="#gaps">③ 空白</a>
+  <a href="#proposals">④ 方案和评审</a><a href="#decide">⑤ 你拍板</a><a href="#appendix">附录</a></div>
+  <button type="button" id="theme-toggle" class="theme" data-to-dark="切到深色" data-to-light="切到浅色" hidden></button>
 </div></nav>
 
 <main class="wrap">
@@ -204,6 +208,7 @@
   </div>
   {% endif %}
   <h3>空白</h3>
+  <p class="meta">有没有人做过，这里不替你判断：只列出读过的论文里离它最近的几篇，和给你自己去查的检索式。</p>
   {% for g in landscape.gaps %}
   <div class="card gap-card" id="gap-G{{ loop.index }}">
     <div class="meta">G{{ loop.index }} · {{ KIND.get(g.kind, g.kind) }} · {% if g.source == "authors_admit" %}论文作者自己承认{% else %}模型推断{% endif %}
@@ -213,7 +218,10 @@
     <h4>证据</h4>
     <ul class="tight">{% for e in g.evidence %}<li>{{ e.paper_id | refs }}：{{ e.note | refs }}</li>{% endfor %}</ul>
     <div class="kv"><b>为什么重要</b>{{ g.why_it_matters | refs }}</div>
-    <div class="kv"><b>撞车风险</b>{{ g.already_done_risk | refs }}</div>
+    {% if g.closest_read %}<h4>读过的论文里最近的</h4>
+    <ul class="tight">{% for c in g.closest_read %}<li>{{ c.paper_id | refs }}：{{ c.how_close | refs }}</li>{% endfor %}</ul>{% endif %}
+    {% if g.check_queries %}<div class="kv"><b>自己补查</b>{% for q in g.check_queries %}<code class="q">{{ q }}</code>{% if not loop.last %} {% endif %}{% endfor %}</div>{% endif %}
+    {% if g.already_done_risk %}<div class="kv"><b>撞车风险</b>{{ g.already_done_risk | refs }}</div>{% endif %}
   </div>
   {% endfor %}
   {% else %}<p class="meta">{% if stopped %}文献证据不够，这一步没有跑，见页面顶部的说明。{% else %}这一步还没完成。{% endif %}</p>{% endif %}
@@ -254,6 +262,16 @@
     {% if prop.questions_for_author %}<h4>需要你自己回答</h4>{{ plist(prop.questions_for_author) }}{% endif %}
 
     <h3>元评审</h3>
+    {% set tl = v.tally %}{% if tl.n %}
+    <div class="callout">
+      <b>评审列出的撞车论文</b> <span class="meta">（程序按 {{ tl.n }} 家评审的意见统计）</span>
+      {% if tl.rows %}<ul class="tight">{% for row in tl.rows %}<li>{% if row.paper_id %}{{ row.paper_id | refs }} {% endif %}{{ row.title }}：{{ tl.n }} 家里 {{ row.by | length }} 家（{{ row.by | join("、") }}）
+        {%- if not row.paper_id %} <span class="badge b-unk">附上的论文以外，需核实</span>{% endif %}
+        {%- if tl.n > 1 and row.by | length == 1 %} <span class="badge b-warn">只有一家这么说，不稳</span>{% endif %}</li>{% endfor %}</ul>
+      <p class="meta">几家都列出的，也要自己点开正文核实：评审看的是同一批材料，可能一起看错。{% if tl.n == 1 %}这次只有一家评审，没法互相对照。{% endif %}</p>
+      {% else %}<p class="meta">评审都没在附上的论文里找到撞车的。这不等于没人做过。</p>{% endif %}
+    </div>
+    {% endif %}
     {% if v.chair and v.chair.summary %}{% set s = v.chair.summary %}
     <div class="chair">
       <b>评审意见汇总</b>（由 {{ cfg.provider("chair").name }} 整理，不下结论）

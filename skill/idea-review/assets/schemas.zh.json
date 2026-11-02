@@ -350,10 +350,21 @@
       "title": "Why It Matters",
       "type": "string"
      },
-     "already_done_risk": {
-      "description": "可能已经有人做过的风险，以及理由",
-      "title": "Already Done Risk",
-      "type": "string"
+     "closest_read": {
+      "description": "读过的论文里离这个空白最近的，最多 3 篇；没有就留空",
+      "items": {
+       "$ref": "#/$defs/NearPaper"
+      },
+      "title": "Closest Read",
+      "type": "array"
+     },
+     "check_queries": {
+      "description": "2 到 3 条英文检索式，给作者自己去查有没有人做过",
+      "items": {
+       "type": "string"
+      },
+      "title": "Check Queries",
+      "type": "array"
      }
     },
     "required": [
@@ -363,9 +374,31 @@
      "evidence",
      "source",
      "why_it_matters",
-     "already_done_risk"
+     "closest_read",
+     "check_queries"
     ],
     "title": "Gap",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "NearPaper": {
+    "properties": {
+     "paper_id": {
+      "description": "读过全文的论文编号",
+      "title": "Paper Id",
+      "type": "string"
+     },
+     "how_close": {
+      "description": "它离这个空白近在哪、还差在哪，注明页码",
+      "title": "How Close",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paper_id",
+     "how_close"
+    ],
+    "title": "NearPaper",
     "type": "object",
     "additionalProperties": false
    }

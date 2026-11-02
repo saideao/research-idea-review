@@ -350,10 +350,21 @@
       "title": "Why It Matters",
       "type": "string"
      },
-     "already_done_risk": {
-      "description": "Risk that someone has already done it, and why",
-      "title": "Already Done Risk",
-      "type": "string"
+     "closest_read": {
+      "description": "The papers you read that come closest to this gap, at most 3; leave empty if none",
+      "items": {
+       "$ref": "#/$defs/NearPaper"
+      },
+      "title": "Closest Read",
+      "type": "array"
+     },
+     "check_queries": {
+      "description": "2 to 3 English search queries the author can use to check whether someone has done it",
+      "items": {
+       "type": "string"
+      },
+      "title": "Check Queries",
+      "type": "array"
      }
     },
     "required": [
@@ -363,9 +374,31 @@
      "evidence",
      "source",
      "why_it_matters",
-     "already_done_risk"
+     "closest_read",
+     "check_queries"
     ],
     "title": "Gap",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "NearPaper": {
+    "properties": {
+     "paper_id": {
+      "description": "ID of a paper whose full text was read",
+      "title": "Paper Id",
+      "type": "string"
+     },
+     "how_close": {
+      "description": "How close it comes to this gap and what it still leaves out, with page numbers",
+      "title": "How Close",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paper_id",
+     "how_close"
+    ],
+    "title": "NearPaper",
     "type": "object",
     "additionalProperties": false
    }

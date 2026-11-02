@@ -925,9 +925,10 @@ def cmd_next(args) -> None:
         landscape["gaps"] = landscape["gaps"][:limit]
         run.save("06_landscape", landscape)
     read_ids = {r["paper_id"] for r in reviews}
-    stray = sorted({e["paper_id"] for g in landscape["gaps"] for e in g["evidence"]} - read_ids)
-    if stray:
-        print(f"注意：空白的证据里引用了没精读过的论文 {'、'.join(stray)}。空白只能拿读过全文的论文作证据，改一下 06_landscape.json。")
+    cited = {e["paper_id"] for g in landscape["gaps"] for e in g["evidence"]}
+    cited |= {c["paper_id"] for g in landscape["gaps"] for c in g["closest_read"]}
+    if stray := sorted(cited - read_ids):
+        print(f"注意：空白的证据或最近论文里引用了没精读过的论文 {'、'.join(stray)}。这两处只能写读过全文的论文，改一下 06_landscape.json。")
 
     n_seeds = min(max(meta["review"]["ideas"] - 1, 0), len(landscape["gaps"]))
     seeds = run.load("07_seeds")

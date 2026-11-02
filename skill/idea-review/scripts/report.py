@@ -33,7 +33,7 @@ T = {
             "确实想用现有的文献跑完，让 agent 运行 <code>ir.py next {run} --force</code>。",
         ],
         "forced": "<b>文献证据偏弱</b>：{why}。下面的空白和 proposal 只能当线索，先多补几篇文献再下判断。",
-        "toc": ["① 检索", "② 文献", "③ 空白", "④ 方案和评审", "⑤ 你拍板", "附录"],
+        "toc": ["① 检索", "② 文献", "③ 空白", "④ 方案和评审", "⑤ 你拍板", "附录"], "to_dark": "切到深色", "to_light": "切到浅色",
         "field": "领域", "concepts": "核心概念", "queries": "检索式",
         "search_note": "检索源：Semantic Scholar、arXiv、OpenAlex。先按标题和摘要初筛，再按相关度从高到低下载全文来精读，下载失败的往下顺延；"
                        "候选里能下载的用完了还不够数，会从检索结果里再多取一些候选。",
@@ -62,6 +62,8 @@ T = {
         "th_others": ["编号", "论文", "年份", "初筛", "理由"],
         "landscape": "③ 版图和空白", "now": "现状", "clusters": "几类做法", "gaps": "空白", "admit": "论文作者自己承认",
         "inferred": "模型推断", "weak_gap": "没有高、中质量的论文支撑", "evidence": "证据", "why": "为什么重要", "risk": "撞车风险",
+        "gaps_lead": "有没有人做过，这里不替你判断：只列出读过的论文里离它最近的几篇，和给你自己去查的检索式。",
+        "closest_read": "读过的论文里最近的", "queries": "自己补查",
         "kinds": {"untested_assumption": "没检验过的假设", "contradiction": "结论互相矛盾", "limitation": "已知局限",
                   "missing_setting": "没覆盖的场景", "measurement": "评测方法的问题", "transfer": "方法迁移", "other": "其他"},
         "proposals_lead": "proposal 由 <b>{writer}</b> 写；元评审由 {reviewers} 在新对话里各自独立完成，评审只拿到 proposal 和论文材料，看不到写作过程。",
@@ -71,6 +73,10 @@ T = {
         "metrics": "指标：", "kill_sign": "不成立的信号", "risks": "风险", "checking": "需要补查", "ask_author": "需要你自己回答",
         "meta_reviews": "元评审", "chair": "评审意见汇总", "chair_by": "（由 {writer} 整理，不下结论）",
         "consensus": "几家都提到的问题", "disagree": "有分歧的地方", "verify": "你必须亲自核实",
+        "tally": "评审列出的撞车论文", "tally_by": "程序按 {n} 家评审的意见统计", "tally_row": "{n} 家里 {k} 家",
+        "tally_external": "附上的论文以外，需核实", "tally_single": "只有一家这么说，不稳",
+        "tally_note": "几家都列出的，也要自己点开正文核实：评审看的是同一批材料，可能一起看错。",
+        "tally_one": "这次只有一家评审，没法互相对照。", "tally_none": "评审都没在附上的论文里找到撞车的。这不等于没人做过。",
         "same_family": "和写 proposal 的是同一家模型，参考价值打折",
         "r_overlap": "撞车", "unread": "没读全文，需核实", "actually": "实际做了：", "r_overlap2": "重合：", "r_diff": "区别：",
         "r_mismatch": "摘要夸大或和正文矛盾", "deaths": "最可能的死因", "from_paper": "论文", "from_inference": "推断",
@@ -102,7 +108,7 @@ T = {
             "If you really want to finish with the papers you have, ask the agent to run <code>ir.py next {run} --force</code>.",
         ],
         "forced": "<b>Weak evidence</b>: {why}. Treat the gaps and proposals below as leads only, and add more papers before drawing conclusions.",
-        "toc": ["① Search", "② Papers", "③ Gaps", "④ Proposals & reviews", "⑤ Your call", "Appendix"],
+        "toc": ["① Search", "② Papers", "③ Gaps", "④ Proposals & reviews", "⑤ Your call", "Appendix"], "to_dark": "Dark mode", "to_light": "Light mode",
         "field": "Field", "concepts": "Core concepts", "queries": "Queries",
         "search_note": "Sources: Semantic Scholar, arXiv, OpenAlex. Papers are screened by title and abstract first, then full texts are downloaded "
                        "in order of relevance; failed downloads are replaced by the next paper. When the downloadable candidates run out, more "
@@ -136,7 +142,9 @@ T = {
         "th_others": ["ID", "Paper", "Year", "Screening", "Reason"],
         "landscape": "③ Landscape & gaps", "now": "Where it stands", "clusters": "Groups of work", "gaps": "Gaps",
         "admit": "admitted by the authors", "inferred": "inferred by the model", "weak_gap": "Not backed by any high- or medium-quality paper",
-        "evidence": "Evidence", "why": "Why it matters", "risk": "Risk it is done",
+        "evidence": "Evidence", "why": "Why it matters", "risk": "Already-done risk",
+        "gaps_lead": "Whether someone has already done it is not judged for you here. Each gap lists the papers read that come closest to it and search queries to check for yourself.",
+        "closest_read": "Closest papers read", "queries": "Check yourself",
         "kinds": {"untested_assumption": "Untested assumption", "contradiction": "Contradictory conclusions", "limitation": "Known limitation",
                   "missing_setting": "Uncovered setting", "measurement": "Flawed evaluation", "transfer": "Method transfer", "other": "Other"},
         "proposals_lead": "Proposals were written by <b>{writer}</b>; meta reviews were done independently in fresh sessions by {reviewers}, "
@@ -148,6 +156,12 @@ T = {
         "checking": "Needs checking", "ask_author": "For you to answer", "meta_reviews": "Meta reviews", "chair": "Summary of the reviews",
         "chair_by": " (compiled by {writer}, no verdict)", "consensus": "Raised by several reviewers", "disagree": "Disagreements",
         "verify": "You must check yourself", "same_family": "Same company as the proposal writer; discount accordingly",
+        "tally": "Overlapping papers named by the reviewers", "tally_by": "counted by the program across {n} reviewer{s}",
+        "tally_row": "{k} of {n}", "tally_external": "Not among the attached papers; check it",
+        "tally_single": "Only one reviewer says so; unstable",
+        "tally_note": "Open and check these yourself even when several reviewers agree: they all saw the same material and can be wrong together.",
+        "tally_one": " There is only one reviewer this time, so there is nothing to compare against.",
+        "tally_none": "No reviewer found an overlapping paper among the attached ones. That does not mean nobody has done it.",
         "r_overlap": "Overlap", "unread": "Full text not read; check it", "actually": "Actually does: ", "r_overlap2": "Overlap: ",
         "r_diff": "Difference: ", "r_mismatch": "Abstract overclaims or contradicts the body", "deaths": "Most likely causes of death",
         "from_paper": "paper", "from_inference": "inference", "feasibility": "Feasibility", "bottleneck": "Bottleneck: ",
@@ -181,6 +195,22 @@ def refs(text) -> str:
     s = _REF.sub(r'<a class="ref" href="#paper-\1">\1</a>', s)
     s = _GAP.sub(r'<a class="ref gap" href="#gap-\1">\1</a>', s)
     return _PAGE.sub(r'<span class="page">\1</span>', s)
+
+
+def overlap_tally(metas: list[dict], by_id: dict[str, dict]) -> tuple[int, list[dict]]:
+    """数几家评审各自把哪些论文列为撞车。由程序统计，不靠模型归纳：只有一家这么说的，报告里标成不稳。"""
+    done = [m for m in metas if m.get("review")]
+    rows: dict[str, dict] = {}
+    for m in done:
+        for o in m["review"]["overlap"]:
+            known = o["paper_id"] in by_id
+            # 附上的论文以外的工作没有编号，按标题归并
+            key = o["paper_id"] if known else "title:" + re.sub(r"\W+", "", o["title"].lower())
+            row = rows.setdefault(key, {"paper_id": o["paper_id"] if known else "",
+                                        "title": by_id[o["paper_id"]]["title"] if known else o["title"], "by": []})
+            if m["reviewer"] not in row["by"]:
+                row["by"].append(m["reviewer"])
+    return len(done), sorted(rows.values(), key=lambda r: (-len(r["by"]), not r["paper_id"], r["paper_id"], r["title"]))
 
 
 def build(run: Run) -> Path:
@@ -256,9 +286,10 @@ def build(run: Run) -> Path:
 
     out: list[str] = []
     w = out.append
-    css = re.sub(r"/\*.*?\*/\s*", "", (SKILL_DIR / "assets" / "report.css").read_text(encoding="utf-8"), flags=re.S)
+    css, js = (re.sub(r"/\*.*?\*/\s*", "", (SKILL_DIR / "assets" / name).read_text(encoding="utf-8"), flags=re.S)
+               for name in ("report.css", "report.js"))
     w(f'<!doctype html>\n<html lang="{t["html_lang"]}">\n<head>\n<meta charset="utf-8">\n'
-      f'<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>{t["title"]}</title>\n<style>\n{css}\n</style>\n</head>\n<body>\n')
+      f'<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>{t["title"]}</title>\n<style>\n{css}\n</style>\n<script>\n{js}</script>\n</head>\n<body>\n')
 
     # ---------- 页头 ----------
     w(f'<header class="hero"><div class="wrap">\n<div class="eyebrow">{t["title"]} · {esc(meta.get("created", "").replace("T", " "))}</div>\n')
@@ -284,7 +315,9 @@ def build(run: Run) -> Path:
             w(f'<div class="warn">{t["forced"].format(why=why)}</div>\n')
     w("</div></header>\n")
     anchors = ["search", "papers", "gaps", "proposals", "decide", "appendix"]
-    w('<nav class="toc"><div class="wrap">' + "".join(f'<a href="#{a}">{n}</a>' for a, n in zip(anchors, t["toc"])) + "</div></nav>\n")
+    w('<nav class="toc"><div class="wrap"><div class="links">' + "".join(f'<a href="#{a}">{n}</a>' for a, n in zip(anchors, t["toc"]))
+      + f'</div><button type="button" id="theme-toggle" class="theme" data-to-dark="{t["to_dark"]}" data-to-light="{t["to_light"]}" hidden></button>'
+      + "</div></nav>\n")
     w('<main class="wrap">\n')
 
     # ---------- ① 检索 ----------
@@ -396,15 +429,21 @@ def build(run: Run) -> Path:
                 w(f'<div class="card"><b>{esc(c["name"])}</b><div class="chips">{"".join(refs(pid) for pid in c["paper_ids"])}</div>'
                   f'<div>{refs(c["summary"])}</div></div>')
             w("</div>\n")
-        w(f'<h3>{t["gaps"]}</h3>\n')
+        w(f'<h3>{t["gaps"]}</h3>\n<p class="meta">{t["gaps_lead"]}</p>\n')
         for i, g in enumerate(gaps, start=1):
             ev = "".join(f'<li>{refs(e["paper_id"])}{t["colon"]}{refs(e["note"])}</li>' for e in g["evidence"])
+            near = "".join(f'<li>{refs(c["paper_id"])}{t["colon"]}{refs(c["how_close"])}</li>' for c in g.get("closest_read", []))
+            near = f'<h4>{t["closest_read"]}</h4><ul class="tight">{near}</ul>' if near else ""
+            queries = " ".join(f'<code class="q">{esc(q)}</code>' for q in g.get("check_queries", []))
+            queries = f'<div class="kv"><b>{t["queries"]}</b>{queries}</div>' if queries else ""
+            # 旧的运行目录里还有模型写的撞车风险，照旧显示
+            risk = f'<div class="kv"><b>{t["risk"]}</b>{refs(g["already_done_risk"])}</div>' if g.get("already_done_risk") else ""
             w(f'<div class="card gap-card" id="gap-G{i}"><div class="meta">G{i} · {esc(t["kinds"].get(g["kind"], g["kind"]))} · '
               f'{t["admit"] if g["source"] == "authors_admit" else t["inferred"]}'
               + (f' <span class="badge b-warn">{t["weak_gap"]}</span>' if i in weak_gaps else "") + "</div>"
               f'<h3 style="margin-top:4px">{esc(g["title"])}</h3><div>{refs(g["description"])}</div>'
               f'<h4>{t["evidence"]}</h4><ul class="tight">{ev}</ul>'
-              f'<div class="kv"><b>{t["why"]}</b>{refs(g["why_it_matters"])}</div><div class="kv"><b>{t["risk"]}</b>{refs(g["already_done_risk"])}</div></div>\n')
+              f'<div class="kv"><b>{t["why"]}</b>{refs(g["why_it_matters"])}</div>{near}{queries}{risk}</div>\n')
     else:
         w(f'<p class="meta">{t["skipped"] if stopped else t["not_done"]}</p>\n')
     w("</section>\n")
@@ -437,6 +476,19 @@ def build(run: Run) -> Path:
           f'<div class="grid2"><div><h4>{t["risks"]}</h4>{plist(prop["risks"])}</div><div><h4>{t["checking"]}</h4>{plist(prop["needs_checking"])}</div></div>'
           + (f'<h4>{t["ask_author"]}</h4>{plist(prop["questions_for_author"])}' if prop["questions_for_author"] else "")
           + f'<h3>{t["meta_reviews"]}</h3>\n')
+        mine = [m for m in metas if m["proposal_id"] == pid]
+        n, rows = overlap_tally(mine, by_id)
+        if n:
+            items = "".join(
+                f'<li>{refs(r["paper_id"]) + " " if r["paper_id"] else ""}{esc(r["title"])}{t["colon"]}'
+                f'{t["tally_row"].format(n=n, k=len(r["by"]))}{t["lp"]}{esc(t["sep"].join(r["by"]))}{t["rp"]}'
+                + ("" if r["paper_id"] else f' <span class="badge b-unk">{t["tally_external"]}</span>')
+                + (f' <span class="badge b-warn">{t["tally_single"]}</span>' if n > 1 and len(r["by"]) == 1 else "") + "</li>"
+                for r in rows)
+            body = (f'<ul class="tight">{items}</ul><p class="meta">{t["tally_note"]}{t["tally_one"] if n == 1 else ""}</p>' if rows
+                    else f'<p class="meta">{t["tally_none"]}</p>')
+            w(f'<div class="callout"><b>{t["tally"]}</b> <span class="meta">{t["lp"]}{t["tally_by"].format(n=n, s="s" if n > 1 else "")}'
+              f'{t["rp"]}</span>{body}</div>\n')
         summary = (chairs.get(pid) or {}).get("summary")
         if summary:
             w(f'<div class="chair"><b>{t["chair"]}</b>{t["chair_by"].format(writer=esc(writer_name))}<p>{refs(summary["summary"])}</p>'
@@ -448,7 +500,6 @@ def build(run: Run) -> Path:
                  if summary["disagreements"] else "")
               + (f'<h4>{t["verify"]}</h4>{plist(summary["must_verify"])}' if summary["must_verify"] else "") + "</div>\n")
         w('<div class="reviewers">')
-        mine = [m for m in metas if m["proposal_id"] == pid]
         for m in mine:
             same = m.get("family") and m.get("family") == writer.get("family")
             w(f'<div class="reviewer"><h4>{esc(m["reviewer"])} <span class="meta">{esc(m.get("model") or "")}</span>'

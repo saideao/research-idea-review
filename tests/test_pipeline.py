@@ -581,6 +581,56 @@ def test_gaps_without_strong_papers_are_marked(tmp_path, mock_config, monkeypatc
     assert html.count("没有高、中质量的论文支撑") == 1
 
 
+def test_gaps_list_closest_papers_and_queries_instead_of_a_risk(tmp_path, mock_config, offline):
+    """空白不让模型判断有没有人做过，只列读过的论文里最近的几篇和补查用的检索式。旧的运行目录照样出报告。"""
+    from idea_review.report import build_report
+    assert run_cli(tmp_path, mock_config) == 0
+    run = tmp_path / "r"
+    landscape = load(run, "06_landscape")
+    assert landscape["gaps"] and all(g["closest_read"] and g["check_queries"] for g in landscape["gaps"])
+    assert all("already_done_risk" not in g for g in landscape["gaps"])
+    html = (run / "report.html").read_text(encoding="utf-8")
+    # 报告附录里有提示词全文，所以按标签找
+    assert "<h4>读过的论文里最近的</h4>" in html and "<b>自己补查</b>" in html and "<b>撞车风险</b>" not in html
+
+    # 旧版本存的空白带模型写的撞车风险、没有新字段：照样能读，报告里照旧显示，再存时不会写回去
+    for g in landscape["gaps"]:
+        del g["closest_read"], g["check_queries"]
+        g["already_done_risk"] = "旧版本写的撞车风险"
+    (run / "06_landscape.json").write_text(json.dumps(landscape, ensure_ascii=False), encoding="utf-8")
+    old = Landscape.model_validate(landscape)
+    assert old.gaps[0].already_done_risk == "旧版本写的撞车风险" and old.gaps[0].closest_read == []
+    assert "already_done_risk" not in old.model_dump()["gaps"][0]
+    html = build_report(run, mock_config).read_text(encoding="utf-8")
+    assert "<b>撞车风险</b>旧版本写的撞车风险" in html and "<h4>读过的论文里最近的</h4>" not in html
+
+
+def test_report_counts_how_many_reviewers_named_each_overlap(tmp_path, mock_config, offline):
+    """撞车论文由程序数有几家评审提到，不靠模型归纳；只有一家提到的标成不稳。"""
+    from idea_review.report import overlap_tally
+    from idea_review.schemas import MetaReviewRecord, OverlapItem
+    papers = {"P01": Paper(paper_id="P01", title="Paper one"), "P02": Paper(paper_id="P02", title="Paper two")}
+    base = MetaReview.model_validate(json.loads(MockProvider_sample("MetaReview")))
+
+    def record(name, *items):
+        overlap = [OverlapItem(paper_id=pid, title=title, what_it_actually_does="d", overlap="o", difference="f",
+                               read_full_text=pid != "external") for pid, title in items]
+        return MetaReviewRecord(proposal_id="I1", reviewer=name, model="m", review=base.model_copy(update={"overlap": overlap}))
+
+    metas = [record("b", ("P01", "x"), ("P02", "x"), ("external", "Survey Bots: A Study")),
+             record("c", ("P01", "y"), ("external", "survey bots - a study")),
+             MetaReviewRecord(proposal_id="I1", reviewer="d", model="m", error="超时")]
+    tally = overlap_tally(metas, papers)
+    # 失败的评审不算；附上论文以外的工作按标题归并；提到的家数多的排前面
+    assert tally["n"] == 2
+    assert [(r["paper_id"], r["title"], r["by"]) for r in tally["rows"]] == [
+        ("P01", "Paper one", ["b", "c"]), ("", "Survey Bots: A Study", ["b", "c"]), ("P02", "Paper two", ["b"])]
+
+    assert run_cli(tmp_path, mock_config) == 0
+    html = (tmp_path / "r" / "report.html").read_text(encoding="utf-8")
+    assert "评审列出的撞车论文" in html and "程序按 2 家评审的意见统计" in html and "2 家里" in html
+
+
 def test_paper_type_is_shown_and_old_notes_still_load():
     review = PaperReview.model_validate(json.loads(MockProvider_sample("PaperReview")))
     assert review.quality.paper_type in ("empirical", "survey", "position", "resource", "theory", "other")
@@ -599,7 +649,7 @@ def MockProvider_sample(schema_name: str) -> str:
     from idea_review.config import ProviderConfig
     from idea_review.llm import UsageTracker
     provider = MockProvider(ProviderConfig(name="m", type="mock", model="m", family="m"), UsageTracker())
-    model = {"PaperReview": PaperReview}[schema_name]
+    model = {"PaperReview": PaperReview, "MetaReview": MetaReview}[schema_name]
     return asyncio.run(provider._complete("", "P01", strict_schema(model), schema_name, "zh"))
 
 

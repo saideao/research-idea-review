@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 Level = Literal["high", "medium", "low"]
 PaperType = Literal["empirical", "survey", "position", "resource", "theory", "other"]
@@ -98,6 +99,11 @@ class Cluster(BaseModel):
     summary: str = Field(description="这一类工作做到了哪一步")
 
 
+class NearPaper(BaseModel):
+    paper_id: str = Field(description="读过全文的论文编号")
+    how_close: str = Field(description="它离这个空白近在哪、还差在哪，注明页码")
+
+
 class Gap(BaseModel):
     kind: Literal["untested_assumption", "contradiction", "limitation", "missing_setting", "measurement", "transfer", "other"] = Field(
         description="空白的类型：没检验过的假设 / 结论互相矛盾 / 已知局限 / 没覆盖的场景 / 评测方法有问题 / 方法迁移 / 其他"
@@ -107,7 +113,11 @@ class Gap(BaseModel):
     evidence: list[Evidence]
     source: Literal["authors_admit", "inferred"] = Field(description="authors_admit：论文作者自己承认；inferred：你推断的")
     why_it_matters: str
-    already_done_risk: str = Field(description="可能已经有人做过的风险，以及理由")
+    # 不让模型判断"有没有人做过"：它只读了这几篇，这种判断又很不稳。只要能核实的：最近的论文和补查用的检索式
+    closest_read: list[NearPaper] = Field(default_factory=list, description="读过的论文里离这个空白最近的，最多 3 篇；没有就留空")
+    check_queries: list[str] = Field(default_factory=list, description="2 到 3 条英文检索式，给作者自己去查有没有人做过")
+    # 旧版本让模型写撞车风险。读旧的运行目录时留给报告显示，不发给模型，也不再存
+    already_done_risk: SkipJsonSchema[str] = Field(default="", exclude=True)
 
 
 class Landscape(BaseModel):
@@ -256,7 +266,10 @@ DESCRIPTIONS_EN = {
                 "flawed evaluation / method transfer / other",
     "Gap.title": "One-line title",
     "Gap.source": "authors_admit: admitted by the paper's authors; inferred: inferred by you",
-    "Gap.already_done_risk": "Risk that someone has already done it, and why",
+    "Gap.closest_read": "The papers you read that come closest to this gap, at most 3; leave empty if none",
+    "Gap.check_queries": "2 to 3 English search queries the author can use to check whether someone has done it",
+    "NearPaper.paper_id": "ID of a paper whose full text was read",
+    "NearPaper.how_close": "How close it comes to this gap and what it still leaves out, with page numbers",
     "Evidence.paper_id": "ID of the paper supporting this point",
     "Evidence.note": "Which part of the paper supports the point, with page numbers",
     "IdeaSeed.based_on_gaps": "IDs of the gaps it is based on, e.g. G2",

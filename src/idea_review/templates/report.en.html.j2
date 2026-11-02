@@ -7,6 +7,9 @@
 <style>
 {% include "_style.css" %}
 </style>
+<script>
+{% include "_theme.js" %}
+</script>
 </head>
 <body>
 
@@ -53,8 +56,9 @@
 </header>
 
 <nav class="toc"><div class="wrap">
-  <a href="#search">① Search</a><a href="#papers">② Papers</a><a href="#gaps">③ Gaps</a>
-  <a href="#proposals">④ Proposals &amp; reviews</a><a href="#decide">⑤ Your call</a><a href="#appendix">Appendix</a>
+  <div class="links"><a href="#search">① Search</a><a href="#papers">② Papers</a><a href="#gaps">③ Gaps</a>
+  <a href="#proposals">④ Proposals &amp; reviews</a><a href="#decide">⑤ Your call</a><a href="#appendix">Appendix</a></div>
+  <button type="button" id="theme-toggle" class="theme" data-to-dark="Dark mode" data-to-light="Light mode" hidden></button>
 </div></nav>
 
 <main class="wrap">
@@ -204,6 +208,7 @@
   </div>
   {% endif %}
   <h3>Gaps</h3>
+  <p class="meta">Whether someone has already done it is not judged for you here. Each gap lists the papers read that come closest to it and search queries to check for yourself.</p>
   {% for g in landscape.gaps %}
   <div class="card gap-card" id="gap-G{{ loop.index }}">
     <div class="meta">G{{ loop.index }} · {{ KIND.get(g.kind, g.kind) }} · {% if g.source == "authors_admit" %}admitted by the authors{% else %}inferred by the model{% endif %}
@@ -213,7 +218,10 @@
     <h4>Evidence</h4>
     <ul class="tight">{% for e in g.evidence %}<li>{{ e.paper_id | refs }}: {{ e.note | refs }}</li>{% endfor %}</ul>
     <div class="kv"><b>Why it matters</b>{{ g.why_it_matters | refs }}</div>
-    <div class="kv"><b>Already-done risk</b>{{ g.already_done_risk | refs }}</div>
+    {% if g.closest_read %}<h4>Closest papers read</h4>
+    <ul class="tight">{% for c in g.closest_read %}<li>{{ c.paper_id | refs }}: {{ c.how_close | refs }}</li>{% endfor %}</ul>{% endif %}
+    {% if g.check_queries %}<div class="kv"><b>Check yourself</b>{% for q in g.check_queries %}<code class="q">{{ q }}</code>{% if not loop.last %} {% endif %}{% endfor %}</div>{% endif %}
+    {% if g.already_done_risk %}<div class="kv"><b>Already-done risk</b>{{ g.already_done_risk | refs }}</div>{% endif %}
   </div>
   {% endfor %}
   {% else %}<p class="meta">{% if stopped %}Not enough evidence in the literature; this step was not run. See the note at the top of the page.{% else %}This step has not finished yet.{% endif %}</p>{% endif %}
@@ -254,6 +262,16 @@
     {% if prop.questions_for_author %}<h4>For you to answer</h4>{{ plist(prop.questions_for_author) }}{% endif %}
 
     <h3>Meta reviews</h3>
+    {% set tl = v.tally %}{% if tl.n %}
+    <div class="callout">
+      <b>Overlapping papers named by the reviewers</b> <span class="meta">(counted by the program across {{ tl.n }} reviewer{{ "s" if tl.n > 1 }})</span>
+      {% if tl.rows %}<ul class="tight">{% for row in tl.rows %}<li>{% if row.paper_id %}{{ row.paper_id | refs }} {% endif %}{{ row.title }}: {{ row.by | length }} of {{ tl.n }} ({{ row.by | join(", ") }})
+        {%- if not row.paper_id %} <span class="badge b-unk">Not among the attached papers; check it</span>{% endif %}
+        {%- if tl.n > 1 and row.by | length == 1 %} <span class="badge b-warn">Only one reviewer says so; unstable</span>{% endif %}</li>{% endfor %}</ul>
+      <p class="meta">Open and check these yourself even when several reviewers agree: they all saw the same material and can be wrong together.{% if tl.n == 1 %} There is only one reviewer this time, so there is nothing to compare against.{% endif %}</p>
+      {% else %}<p class="meta">No reviewer found an overlapping paper among the attached ones. That does not mean nobody has done it.</p>{% endif %}
+    </div>
+    {% endif %}
     {% if v.chair and v.chair.summary %}{% set s = v.chair.summary %}
     <div class="chair">
       <b>Summary of the reviews</b> (compiled by {{ cfg.provider("chair").name }}, no verdict)

@@ -106,11 +106,76 @@ def test_skill_report_renders_a_cli_run(tmp_path, monkeypatch):
             assert ir.check(r["review"], "PaperReview") == []
         for m in json.loads((run / "09_meta_reviews.json").read_text(encoding="utf-8")):
             assert ir.check(m["review"], "MetaReview") == []
+        assert_theme_toggle((run / "report.html").read_text(encoding="utf-8"), lang)
         assert skill_report.main([str(run)]) == 0
         html = (run / "report.html").read_text(encoding="utf-8")
         assert ("元评审" if lang == "zh" else "Meta reviews") in html
+        assert_theme_toggle(html, lang)
         if lang == "en":
             assert not CJK.search(html)
+
+
+def assert_theme_toggle(html, lang):
+    """报告能切浅色/深色：按钮在导航栏里，记住选择的脚本在 <body> 之前，深色样式能被手动选中。"""
+    assert 'id="theme-toggle"' in html and ("切到深色" if lang == "zh" else "Dark mode") in html
+    assert html.index("idea-review-theme") < html.index("<body>")
+    assert ':root[data-theme="dark"]' in html and ':root:not([data-theme="light"])' in html
+
+
+def test_skill_assets_match_the_cli_templates():
+    """skill 版的样式和切换脚本是命令行版的副本，只有第一行注释不同。"""
+    templates = SCRIPTS.parent.parent.parent / "src" / "idea_review" / "templates"
+    for cli_name, skill_name in (("_style.css", "report.css"), ("_theme.js", "report.js")):
+        cli_text = (templates / cli_name).read_text(encoding="utf-8").split("\n", 1)[1]
+        skill_text = (SCRIPTS.parent / "assets" / skill_name).read_text(encoding="utf-8").split("\n", 1)[1]
+        assert cli_text == skill_text, skill_name
+
+
+def test_skill_report_lists_closest_papers_and_counts_overlaps(tmp_path, monkeypatch):
+    """skill 报告和命令行版一样：空白只列最近的论文和检索式，撞车论文由程序数几家评审提到。旧格式的空白照样显示。"""
+    import asyncio
+    from importlib import resources
+    from idea_review import pipeline as pl
+    from idea_review.config import load_config
+    monkeypatch.setattr(pl, "search_all", fake_search)
+    monkeypatch.setattr(pl, "fetch_fulltexts", fake_fetch)
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(resources.files("idea_review").joinpath("examples", "config.mock.toml").read_text(encoding="utf-8"), encoding="utf-8")
+    run = tmp_path / "run"
+    asyncio.run(pl.Pipeline(load_config(cfg_path), run, "让大模型代替真人填问卷", queries=["q"]).run())
+    assert skill_report.main([str(run)]) == 0
+    html = (run / "report.html").read_text(encoding="utf-8")
+    assert "<h4>读过的论文里最近的</h4>" in html and "<b>自己补查</b>" in html and "<b>撞车风险</b>" not in html
+    assert "程序按 2 家评审的意见统计" in html and "2 家里" in html
+
+    landscape = json.loads((run / "06_landscape.json").read_text(encoding="utf-8"))
+    for g in landscape["gaps"]:
+        del g["closest_read"], g["check_queries"]
+        g["already_done_risk"] = "旧版本写的撞车风险"
+    (run / "06_landscape.json").write_text(json.dumps(landscape, ensure_ascii=False), encoding="utf-8")
+    assert skill_report.main([str(run)]) == 0
+    assert "<b>撞车风险</b>旧版本写的撞车风险" in (run / "report.html").read_text(encoding="utf-8")
+
+    papers = {"P01": {"title": "Paper one"}, "P02": {"title": "Paper two"}}
+    item = lambda pid, title: {"paper_id": pid, "title": title}  # noqa: E731
+    metas = [{"reviewer": "b", "review": {"overlap": [item("P01", "x"), item("P02", "x"), item("external", "Survey Bots: A Study")]}},
+             {"reviewer": "c", "review": {"overlap": [item("P01", "y"), item("external", "survey bots - a study")]}},
+             {"reviewer": "d", "review": None, "error": "超时"}]
+    n, rows = skill_report.overlap_tally(metas, papers)
+    assert n == 2
+    assert [(r["paper_id"], r["title"], r["by"]) for r in rows] == [
+        ("P01", "Paper one", ["b", "c"]), ("", "Survey Bots: A Study", ["b", "c"]), ("P02", "Paper two", ["b"])]
+
+
+def test_closest_papers_must_have_been_read(tmp_path, capsys):
+    run = make_run(tmp_path)
+    write_notes(run, {"P01": "high", "P02": "medium", "P03": "low"})
+    landscape = mock_json("Landscape")
+    landscape["gaps"][0]["closest_read"] = [{"paper_id": "P05", "how_close": "近在哪 [p.2]"}]
+    (run / "06_landscape.json").write_text(json.dumps(landscape, ensure_ascii=False), encoding="utf-8")
+    capsys.readouterr()
+    run_ir("next", str(run))
+    assert "引用了没精读过的论文 P05" in capsys.readouterr().out
 
 
 def test_check_points_at_the_wrong_fields():

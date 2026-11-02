@@ -59,6 +59,23 @@ COUNT_NOTES = {
 TEMPLATES = {"zh": "report.html.j2", "en": "report.en.html.j2"}
 
 
+def overlap_tally(metas: list[MetaReviewRecord], by_id: dict[str, Paper]) -> dict:
+    """数几家评审各自把哪些论文列为撞车。由程序统计，不靠模型归纳：只有一家这么说的，报告里标成不稳。"""
+    done = [m for m in metas if m.review]
+    rows: dict[str, dict] = {}
+    for m in done:
+        for o in m.review.overlap:
+            known = o.paper_id in by_id
+            # 附上的论文以外的工作没有编号，按标题归并
+            key = o.paper_id if known else "title:" + re.sub(r"\W+", "", o.title.lower())
+            row = rows.setdefault(key, {"paper_id": o.paper_id if known else "",
+                                        "title": by_id[o.paper_id].title if known else o.title, "by": []})
+            if m.reviewer not in row["by"]:
+                row["by"].append(m.reviewer)
+    ordered = sorted(rows.values(), key=lambda r: (-len(r["by"]), not r["paper_id"], r["paper_id"], r["title"]))
+    return {"n": len(done), "rows": ordered}
+
+
 def build_report(run_dir: Path, cfg: Config) -> Path:
     store = RunStore(run_dir)
     meta = json.loads(store.path("meta").read_text(encoding="utf-8")) if store.has("meta") else {}
@@ -93,9 +110,11 @@ def build_report(run_dir: Path, cfg: Config) -> Path:
 
     proposal_views = []
     for rec in proposals:
+        mine = [m for m in metas if m.proposal_id == rec.proposal_id]
         proposal_views.append({
             "rec": rec,
-            "metas": [m for m in metas if m.proposal_id == rec.proposal_id],
+            "metas": mine,
+            "tally": overlap_tally(mine, by_id),
             "chair": chairs.get(rec.proposal_id),
         })
 

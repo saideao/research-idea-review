@@ -72,7 +72,8 @@
       "evidence": [{"paper_id": "P04", "note": "哪部分支撑这个判断 [p.8]"}],
       "source": "authors_admit",
       "why_it_matters": "...",
-      "already_done_risk": "可能已经有人做过的风险和理由"
+      "closest_read": [{"paper_id": "P02", "how_close": "近在哪、还差在哪 [p.5]"}],
+      "check_queries": ["english search query one", "english search query two"]
     }
   ]
 }

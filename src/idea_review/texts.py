@@ -50,7 +50,7 @@ ZH = {
     "abstract_digest": "{line}（只有摘要，没读到全文）\n  摘要：{abstract}",
     "no_fulltext_notes": "（没有读到全文）",
     # 空白和新方向
-    "gap_line": "G{i}（{kind}，{source}）{title}：{description}；证据：{evidence}；已有人做的风险：{risk}",
+    "gap_line": "G{i}（{kind}，{source}）{title}：{description}；证据：{evidence}；读过的论文里最近的：{closest}",
     "gap_source": {"authors_admit": "作者承认", "inferred": "推断"},
     "gap_evidence": "{id} {note}",
     "no_gaps": "（没有找到明确的空白）",
@@ -132,7 +132,7 @@ EN = {
     "scope_gaps": "  Scope the abstract leaves out: {items}",
     "abstract_digest": "{line} (abstract only; full text not read)\n  Abstract: {abstract}",
     "no_fulltext_notes": "(no full texts were read)",
-    "gap_line": "G{i} ({kind}, {source}) {title}: {description}; evidence: {evidence}; risk that it is already done: {risk}",
+    "gap_line": "G{i} ({kind}, {source}) {title}: {description}; evidence: {evidence}; closest papers read: {closest}",
     "gap_source": {"authors_admit": "admitted by the authors", "inferred": "inferred"},
     "gap_evidence": "{id} {note}",
     "no_gaps": "(no clear gaps found)",
