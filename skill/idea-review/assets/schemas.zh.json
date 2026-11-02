@@ -1,0 +1,929 @@
+{
+ "QueryPlan": {
+  "properties": {
+   "restated_idea": {
+    "description": "用一两句话复述这个 idea，说清要解决什么问题",
+    "title": "Restated Idea",
+    "type": "string"
+   },
+   "field": {
+    "description": "所属的大领域，宽泛一点即可",
+    "title": "Field",
+    "type": "string"
+   },
+   "core_concepts": {
+    "description": "3 到 6 个核心概念",
+    "items": {
+     "type": "string"
+    },
+    "title": "Core Concepts",
+    "type": "array"
+   },
+   "search_queries": {
+    "description": "4 到 8 条英文检索式，覆盖不同说法和相邻方向",
+    "items": {
+     "type": "string"
+    },
+    "title": "Search Queries",
+    "type": "array"
+   }
+  },
+  "required": [
+   "restated_idea",
+   "field",
+   "core_concepts",
+   "search_queries"
+  ],
+  "title": "QueryPlan",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "ScreenItem": {
+  "properties": {
+   "paper_id": {
+    "description": "论文编号，原样照抄，比如 P07",
+    "title": "Paper Id",
+    "type": "string"
+   },
+   "relevance": {
+    "description": "值不值得下载全文来读：high / medium / low",
+    "enum": [
+     "high",
+     "medium",
+     "low"
+    ],
+    "title": "Relevance",
+    "type": "string"
+   },
+   "reason": {
+    "description": "一句话理由",
+    "title": "Reason",
+    "type": "string"
+   }
+  },
+  "required": [
+   "paper_id",
+   "relevance",
+   "reason"
+  ],
+  "title": "ScreenItem",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "PaperReview": {
+  "$defs": {
+   "AbstractCheck": {
+    "description": "摘要和正文对照。只有夸大或矛盾才算不一致；只是没交代适用范围的单独列，不打警示标记。",
+    "properties": {
+     "overclaims": {
+      "description": "夸大或矛盾：摘要的说法正文不支持，或者数字、结论和正文对不上。每条写清摘要怎么说、正文实际是什么，注明页码如 [p.6]；没有就留空",
+      "items": {
+       "type": "string"
+      },
+      "title": "Overclaims",
+      "type": "array"
+     },
+     "scope_gaps": {
+      "description": "没交代适用范围：摘要的说法正文撑得住，但只在更窄的条件下成立（比如只测了部分模型、样本很小、只用了一个数据集），摘要没提。每条写清是什么条件，注明页码；没有就留空",
+      "items": {
+       "type": "string"
+      },
+      "title": "Scope Gaps",
+      "type": "array"
+     }
+    },
+    "required": [
+     "overclaims",
+     "scope_gaps"
+    ],
+    "title": "AbstractCheck",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "QualityAssessment": {
+    "properties": {
+     "paper_type": {
+      "description": "论文类型：empirical 方法或实证研究 / survey 综述 / position 立场或观点文章 / resource 数据集、基准或工具 / theory 理论分析 / other 其他",
+      "enum": [
+       "empirical",
+       "survey",
+       "position",
+       "resource",
+       "theory",
+       "other"
+      ],
+      "title": "Paper Type",
+      "type": "string"
+     },
+     "evidence_strength": {
+      "description": "核心结论的证据强度",
+      "enum": [
+       "high",
+       "medium",
+       "low"
+      ],
+      "title": "Evidence Strength",
+      "type": "string"
+     },
+     "rigor": {
+      "description": "对基线、消融、统计检验、数据规模等的具体观察，注明页码",
+      "items": {
+       "type": "string"
+      },
+      "title": "Rigor",
+      "type": "array"
+     },
+     "reproducibility": {
+      "description": "可复现程度：代码、数据、超参数是否给全",
+      "enum": [
+       "high",
+       "medium",
+       "low"
+      ],
+      "title": "Reproducibility",
+      "type": "string"
+     },
+     "red_flags": {
+      "description": "危险信号，比如结论超出实验、没有基线、样本极小；没有就留空",
+      "items": {
+       "type": "string"
+      },
+      "title": "Red Flags",
+      "type": "array"
+     },
+     "tier": {
+      "description": "综合质量档位：high / medium / low",
+      "enum": [
+       "high",
+       "medium",
+       "low"
+      ],
+      "title": "Tier",
+      "type": "string"
+     },
+     "tier_reason": {
+      "description": "定档理由，一两句话",
+      "title": "Tier Reason",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paper_type",
+     "evidence_strength",
+     "rigor",
+     "reproducibility",
+     "red_flags",
+     "tier",
+     "tier_reason"
+    ],
+    "title": "QualityAssessment",
+    "type": "object",
+    "additionalProperties": false
+   }
+  },
+  "properties": {
+   "what_it_actually_does": {
+    "description": "依据正文（不是摘要），这篇论文实际做了什么，三五句话",
+    "title": "What It Actually Does",
+    "type": "string"
+   },
+   "problem": {
+    "description": "它要解决的问题",
+    "title": "Problem",
+    "type": "string"
+   },
+   "method": {
+    "description": "方法要点",
+    "title": "Method",
+    "type": "string"
+   },
+   "setup": {
+    "description": "实验设置：数据、基线、指标",
+    "title": "Setup",
+    "type": "string"
+   },
+   "key_results": {
+    "description": "主要结果，注明页码",
+    "items": {
+     "type": "string"
+    },
+    "title": "Key Results",
+    "type": "array"
+   },
+   "abstract_vs_body": {
+    "$ref": "#/$defs/AbstractCheck"
+   },
+   "quality": {
+    "$ref": "#/$defs/QualityAssessment"
+   },
+   "relevance_to_idea": {
+    "description": "和用户的 idea 有什么关系：重合在哪、能借鉴什么",
+    "title": "Relevance To Idea",
+    "type": "string"
+   },
+   "limitations": {
+    "description": "局限，区分作者自己承认的和你看出来的",
+    "items": {
+     "type": "string"
+    },
+    "title": "Limitations",
+    "type": "array"
+   },
+   "open_questions": {
+    "description": "文中提到或能直接看出、还没解决的问题，注明页码",
+    "items": {
+     "type": "string"
+    },
+    "title": "Open Questions",
+    "type": "array"
+   }
+  },
+  "required": [
+   "what_it_actually_does",
+   "problem",
+   "method",
+   "setup",
+   "key_results",
+   "abstract_vs_body",
+   "quality",
+   "relevance_to_idea",
+   "limitations",
+   "open_questions"
+  ],
+  "title": "PaperReview",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "Landscape": {
+  "$defs": {
+   "Cluster": {
+    "properties": {
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "paper_ids": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Paper Ids",
+      "type": "array"
+     },
+     "summary": {
+      "description": "这一类工作做到了哪一步",
+      "title": "Summary",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "paper_ids",
+     "summary"
+    ],
+    "title": "Cluster",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "Evidence": {
+    "properties": {
+     "paper_id": {
+      "description": "支撑这条判断的论文编号",
+      "title": "Paper Id",
+      "type": "string"
+     },
+     "note": {
+      "description": "这篇论文里的哪部分支撑了判断，注明页码",
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paper_id",
+     "note"
+    ],
+    "title": "Evidence",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "Gap": {
+    "properties": {
+     "kind": {
+      "description": "空白的类型：没检验过的假设 / 结论互相矛盾 / 已知局限 / 没覆盖的场景 / 评测方法有问题 / 方法迁移 / 其他",
+      "enum": [
+       "untested_assumption",
+       "contradiction",
+       "limitation",
+       "missing_setting",
+       "measurement",
+       "transfer",
+       "other"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "title": {
+      "description": "一句话标题",
+      "title": "Title",
+      "type": "string"
+     },
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "evidence": {
+      "items": {
+       "$ref": "#/$defs/Evidence"
+      },
+      "title": "Evidence",
+      "type": "array"
+     },
+     "source": {
+      "description": "authors_admit：论文作者自己承认；inferred：你推断的",
+      "enum": [
+       "authors_admit",
+       "inferred"
+      ],
+      "title": "Source",
+      "type": "string"
+     },
+     "why_it_matters": {
+      "title": "Why It Matters",
+      "type": "string"
+     },
+     "already_done_risk": {
+      "description": "可能已经有人做过的风险，以及理由",
+      "title": "Already Done Risk",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "title",
+     "description",
+     "evidence",
+     "source",
+     "why_it_matters",
+     "already_done_risk"
+    ],
+    "title": "Gap",
+    "type": "object",
+    "additionalProperties": false
+   }
+  },
+  "properties": {
+   "summary": {
+    "description": "这个方向现在做到了哪一步，一段话",
+    "title": "Summary",
+    "type": "string"
+   },
+   "clusters": {
+    "items": {
+     "$ref": "#/$defs/Cluster"
+    },
+    "title": "Clusters",
+    "type": "array"
+   },
+   "gaps": {
+    "items": {
+     "$ref": "#/$defs/Gap"
+    },
+    "title": "Gaps",
+    "type": "array"
+   }
+  },
+  "required": [
+   "summary",
+   "clusters",
+   "gaps"
+  ],
+  "title": "Landscape",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "IdeaSeeds": {
+  "$defs": {
+   "IdeaSeed": {
+    "properties": {
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "one_liner": {
+      "title": "One Liner",
+      "type": "string"
+     },
+     "based_on_gaps": {
+      "description": "依据的空白编号，比如 G2",
+      "items": {
+       "type": "string"
+      },
+      "title": "Based On Gaps",
+      "type": "array"
+     },
+     "differs_from_original": {
+      "description": "和用户原始 idea 的区别，不能只是换个名字",
+      "title": "Differs From Original",
+      "type": "string"
+     },
+     "entry_point": {
+      "description": "一周内能动手验证的切入点",
+      "title": "Entry Point",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title",
+     "one_liner",
+     "based_on_gaps",
+     "differs_from_original",
+     "entry_point"
+    ],
+    "title": "IdeaSeed",
+    "type": "object",
+    "additionalProperties": false
+   }
+  },
+  "properties": {
+   "seeds": {
+    "items": {
+     "$ref": "#/$defs/IdeaSeed"
+    },
+    "title": "Seeds",
+    "type": "array"
+   }
+  },
+  "required": [
+   "seeds"
+  ],
+  "title": "IdeaSeeds",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "IdeaSeed": {
+  "properties": {
+   "title": {
+    "title": "Title",
+    "type": "string"
+   },
+   "one_liner": {
+    "title": "One Liner",
+    "type": "string"
+   },
+   "based_on_gaps": {
+    "description": "依据的空白编号，比如 G2",
+    "items": {
+     "type": "string"
+    },
+    "title": "Based On Gaps",
+    "type": "array"
+   },
+   "differs_from_original": {
+    "description": "和用户原始 idea 的区别，不能只是换个名字",
+    "title": "Differs From Original",
+    "type": "string"
+   },
+   "entry_point": {
+    "description": "一周内能动手验证的切入点",
+    "title": "Entry Point",
+    "type": "string"
+   }
+  },
+  "required": [
+   "title",
+   "one_liner",
+   "based_on_gaps",
+   "differs_from_original",
+   "entry_point"
+  ],
+  "title": "IdeaSeed",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "Proposal": {
+  "$defs": {
+   "ClosestWork": {
+    "properties": {
+     "paper_id": {
+      "title": "Paper Id",
+      "type": "string"
+     },
+     "overlap": {
+      "title": "Overlap",
+      "type": "string"
+     },
+     "difference": {
+      "title": "Difference",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paper_id",
+     "overlap",
+     "difference"
+    ],
+    "title": "ClosestWork",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "MinimalExperiment": {
+    "properties": {
+     "setup": {
+      "title": "Setup",
+      "type": "string"
+     },
+     "data": {
+      "title": "Data",
+      "type": "string"
+     },
+     "baselines": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Baselines",
+      "type": "array"
+     },
+     "metrics": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Metrics",
+      "type": "array"
+     },
+     "duration": {
+      "description": "预计用时",
+      "title": "Duration",
+      "type": "string"
+     }
+    },
+    "required": [
+     "setup",
+     "data",
+     "baselines",
+     "metrics",
+     "duration"
+    ],
+    "title": "MinimalExperiment",
+    "type": "object",
+    "additionalProperties": false
+   }
+  },
+  "properties": {
+   "title": {
+    "title": "Title",
+    "type": "string"
+   },
+   "one_liner": {
+    "title": "One Liner",
+    "type": "string"
+   },
+   "problem": {
+    "title": "Problem",
+    "type": "string"
+   },
+   "why_existing_fail": {
+    "description": "为什么现有方法解决不了，引用论文编号",
+    "title": "Why Existing Fail",
+    "type": "string"
+   },
+   "closest_work": {
+    "items": {
+     "$ref": "#/$defs/ClosestWork"
+    },
+    "title": "Closest Work",
+    "type": "array"
+   },
+   "method": {
+    "title": "Method",
+    "type": "string"
+   },
+   "minimal_experiment": {
+    "$ref": "#/$defs/MinimalExperiment"
+   },
+   "falsification": {
+    "description": "出现什么结果，说明这个 idea 不成立",
+    "title": "Falsification",
+    "type": "string"
+   },
+   "risks": {
+    "items": {
+     "type": "string"
+    },
+    "title": "Risks",
+    "type": "array"
+   },
+   "needs_checking": {
+    "description": "需要补查的文献或事实；没有就留空",
+    "items": {
+     "type": "string"
+    },
+    "title": "Needs Checking",
+    "type": "array"
+   },
+   "questions_for_author": {
+    "description": "作者没说清、需要作者自己回答的问题",
+    "items": {
+     "type": "string"
+    },
+    "title": "Questions For Author",
+    "type": "array"
+   }
+  },
+  "required": [
+   "title",
+   "one_liner",
+   "problem",
+   "why_existing_fail",
+   "closest_work",
+   "method",
+   "minimal_experiment",
+   "falsification",
+   "risks",
+   "needs_checking",
+   "questions_for_author"
+  ],
+  "title": "Proposal",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "MetaReview": {
+  "$defs": {
+   "Death": {
+    "properties": {
+     "reason": {
+      "title": "Reason",
+      "type": "string"
+     },
+     "basis": {
+      "title": "Basis",
+      "type": "string"
+     },
+     "source": {
+      "description": "paper：论文里写的；inference：你推断的",
+      "enum": [
+       "paper",
+       "inference"
+      ],
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "reason",
+     "basis",
+     "source"
+    ],
+    "title": "Death",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "Falsification": {
+    "properties": {
+     "experiment": {
+      "title": "Experiment",
+      "type": "string"
+     },
+     "compare_against": {
+      "title": "Compare Against",
+      "type": "string"
+     },
+     "metric": {
+      "title": "Metric",
+      "type": "string"
+     },
+     "kill_if": {
+      "description": "出现什么结果就该放弃",
+      "title": "Kill If",
+      "type": "string"
+     },
+     "continue_if": {
+      "description": "出现什么结果才值得继续",
+      "title": "Continue If",
+      "type": "string"
+     },
+     "est_days": {
+      "title": "Est Days",
+      "type": "string"
+     }
+    },
+    "required": [
+     "experiment",
+     "compare_against",
+     "metric",
+     "kill_if",
+     "continue_if",
+     "est_days"
+    ],
+    "title": "Falsification",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "Feasibility": {
+    "properties": {
+     "bottleneck": {
+      "description": "数据、算力、时间、技术上最可能卡住的地方",
+      "title": "Bottleneck",
+      "type": "string"
+     },
+     "workaround": {
+      "title": "Workaround",
+      "type": "string"
+     }
+    },
+    "required": [
+     "bottleneck",
+     "workaround"
+    ],
+    "title": "Feasibility",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "OverlapItem": {
+    "properties": {
+     "paper_id": {
+      "description": "附上论文的编号；附上的论文以外的工作写 external",
+      "title": "Paper Id",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "what_it_actually_does": {
+      "description": "依据正文，它实际做了什么，注明页码",
+      "title": "What It Actually Does",
+      "type": "string"
+     },
+     "overlap": {
+      "title": "Overlap",
+      "type": "string"
+     },
+     "difference": {
+      "title": "Difference",
+      "type": "string"
+     },
+     "read_full_text": {
+      "description": "你是否读过它的全文",
+      "title": "Read Full Text",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "paper_id",
+     "title",
+     "what_it_actually_does",
+     "overlap",
+     "difference",
+     "read_full_text"
+    ],
+    "title": "OverlapItem",
+    "type": "object",
+    "additionalProperties": false
+   }
+  },
+  "properties": {
+   "overlap": {
+    "items": {
+     "$ref": "#/$defs/OverlapItem"
+    },
+    "title": "Overlap",
+    "type": "array"
+   },
+   "no_overlap_note": {
+    "description": "附上的论文里没有撞车时写明；有撞车就留空",
+    "title": "No Overlap Note",
+    "type": "string"
+   },
+   "abstract_body_mismatches": {
+    "description": "摘要夸大或和正文矛盾的地方（只是没交代适用范围的不算）；没有就留空",
+    "items": {
+     "type": "string"
+    },
+    "title": "Abstract Body Mismatches",
+    "type": "array"
+   },
+   "causes_of_death": {
+    "description": "最多 3 条，最致命的放前面",
+    "items": {
+     "$ref": "#/$defs/Death"
+    },
+    "title": "Causes Of Death",
+    "type": "array"
+   },
+   "feasibility": {
+    "$ref": "#/$defs/Feasibility"
+   },
+   "cheapest_falsification": {
+    "$ref": "#/$defs/Falsification"
+   },
+   "questions_for_author": {
+    "description": "作者在投入之前必须回答的 3 个问题",
+    "items": {
+     "type": "string"
+    },
+    "title": "Questions For Author",
+    "type": "array"
+   }
+  },
+  "required": [
+   "overlap",
+   "no_overlap_note",
+   "abstract_body_mismatches",
+   "causes_of_death",
+   "feasibility",
+   "cheapest_falsification",
+   "questions_for_author"
+  ],
+  "title": "MetaReview",
+  "type": "object",
+  "additionalProperties": false
+ },
+ "ChairSummary": {
+  "$defs": {
+   "ConsensusIssue": {
+    "properties": {
+     "issue": {
+      "title": "Issue",
+      "type": "string"
+     },
+     "raised_by": {
+      "description": "提出这个问题的评审名字",
+      "items": {
+       "type": "string"
+      },
+      "title": "Raised By",
+      "type": "array"
+     }
+    },
+    "required": [
+     "issue",
+     "raised_by"
+    ],
+    "title": "ConsensusIssue",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "Disagreement": {
+    "properties": {
+     "topic": {
+      "title": "Topic",
+      "type": "string"
+     },
+     "positions": {
+      "description": "每条写清是哪位评审、怎么看",
+      "items": {
+       "type": "string"
+      },
+      "title": "Positions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "topic",
+     "positions"
+    ],
+    "title": "Disagreement",
+    "type": "object",
+    "additionalProperties": false
+   }
+  },
+  "properties": {
+   "summary": {
+    "description": "几位评审意见的概括，不下结论、不打分",
+    "title": "Summary",
+    "type": "string"
+   },
+   "consensus": {
+    "description": "两位及以上评审都提到的问题",
+    "items": {
+     "$ref": "#/$defs/ConsensusIssue"
+    },
+    "title": "Consensus",
+    "type": "array"
+   },
+   "disagreements": {
+    "items": {
+     "$ref": "#/$defs/Disagreement"
+    },
+    "title": "Disagreements",
+    "type": "array"
+   },
+   "must_verify": {
+    "description": "作者必须亲自点开论文核实的说法",
+    "items": {
+     "type": "string"
+    },
+    "title": "Must Verify",
+    "type": "array"
+   }
+  },
+  "required": [
+   "summary",
+   "consensus",
+   "disagreements",
+   "must_verify"
+  ],
+  "title": "ChairSummary",
+  "type": "object",
+  "additionalProperties": false
+ }
+}

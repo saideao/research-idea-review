@@ -26,6 +26,27 @@ You make the call. The report just lays out the material.
 - **Paper quality is judged on evidence only.** "Peer-reviewed / preprint" and citation counts are shown separately; the quality tier is based only on the paper's own experiments and arguments, judged by paper type, so a survey or position paper is not rated low just for having no experiments.
 - **No evidence, no made-up analysis.** With only two or three papers read, or only low-quality ones, a model asked to find gaps and write proposals will still produce plenty, but most of it will not hold up, and it costs money and time. So the program stops here and tells you how to add more literature.
 
+## Skill version
+
+If you would rather not set up API keys or install a command-line tool, use the skill in `skill/idea-review/`: install it into a code agent such as Claude Code or Codex, then just ask it to review your idea.
+
+How it differs from the command-line version:
+
+- The agent you are already using reads the papers, finds the gaps and writes the proposals, on its own subscription, so there are no API keys to set up.
+- Searching, downloading full texts, format checks, "stop when the evidence is not enough" and calling other companies' models for meta review are done by the skill's scripts, with the same rules as the command-line version. The scripts use only the Python standard library.
+- Meta reviews call the other companies' command-line tools installed on your machine (codex, gemini or claude, minus the agent's own company), or an OpenAI-compatible API. If none is available, a subagent reviews instead, and the report says the reviewer is from the same company.
+- The run directory uses the same file formats as the command-line version, and the report looks the same.
+
+Install it in Claude Code:
+
+```bash
+cp -r skill/idea-review ~/.claude/skills/
+```
+
+To use it in one project only, copy it into that project's `.claude/skills/` instead. For other tools that support Agent Skills, put it in their skills directory. It needs network access and Python 3.10 or later; uv is best (it installs pypdf for PDF text extraction automatically), otherwise install pypdf or poppler.
+
+Once installed, tell the agent "use idea-review on this idea: …". The reading step makes the agent read several full texts, which uses a fair share of your quota; it reads 8 by default, and you can ask for fewer. The skill's instructions are written in Chinese; if you talk to the agent in English, the notes and report are written in English.
+
 ## Install
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
@@ -260,4 +281,4 @@ To save money, switch `screener` and `planner` to cheaper models, lower the numb
 uv run pytest
 ```
 
-The tests do not use the network: they run the whole pipeline with fake search results and mock models.
+The tests do not use the network: they run the whole pipeline with fake search results and mock models. The skill's scripts are tested in `tests/test_skill.py`, with fake reviewer command-line tools.

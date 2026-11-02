@@ -26,6 +26,27 @@
 - **文献质量只看证据。** "已发表 / 预印本"、引用数单独标出来；质量档位只看论文本身的实验和论证，而且按论文类型分别判断，综述、立场文章不会因为没做实验就被判成低质量。
 - **证据不够就不往下编。** 只读到两三篇，或者读到的都是低质量论文时，硬让模型找空白、写 proposal，它也能写出一大堆，但多半站不住，还白花钱和时间。所以这时程序会停下来，告诉你怎么补文献。
 
+## Skill 版
+
+不想配 API key、不想装命令行工具的，可以用 `skill/idea-review/` 里的 skill：装进 Claude Code、Codex 这类 code agent，直接跟它说"帮我看看这个 idea"就行。
+
+和命令行版的区别：
+
+- 读论文、找空白、写 proposal 的是你正在用的 agent 自己，用的是它的订阅，不用另外配 API key。
+- 检索、下载全文、检查格式、"证据不够就停"、调别家模型做元评审，由 skill 里的脚本完成，规则和命令行版一样。脚本只用 Python 标准库。
+- 元评审调用本机装好的别家命令行工具（codex、gemini、claude 里去掉和 agent 同一家的），或者 OpenAI 兼容接口。一家都没有时用子代理代评，报告里会标明是同一家的模型。
+- 运行目录里的文件格式和命令行版一样，报告样式也一样。
+
+在 Claude Code 里安装：
+
+```bash
+cp -r skill/idea-review ~/.claude/skills/
+```
+
+只想在某个项目里用，就复制到那个项目的 `.claude/skills/` 下。其他支持 Agent Skills 的工具，放进它们各自的 skills 目录。需要能联网、有 Python 3.10 以上；装了 uv 最好（会自动装抽 PDF 文字用的 pypdf），没有的话装 pypdf 或 poppler 都行。
+
+装好以后在 agent 里说"用 idea-review 帮我看看这个 idea：……"。精读那一步 agent 要读好几篇全文，比较费额度；默认精读 8 篇，可以让它调小。skill 的说明文件是中文写的，跟它说英文的话，笔记和报告会用英文写。
+
 ## 安装
 
 需要 Python 3.11 以上和 [uv](https://docs.astral.sh/uv/)。
@@ -260,4 +281,4 @@ idea-review run --resume runs/某次运行
 uv run pytest
 ```
 
-测试不联网，用假的检索结果和 mock 模型把整条流程跑一遍。
+测试不联网，用假的检索结果和 mock 模型把整条流程跑一遍。skill 版的脚本在 `tests/test_skill.py` 里测，评审用的命令行工具换成了假的。
