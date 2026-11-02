@@ -155,17 +155,21 @@ I2 起的 `seed` 照抄 07_seeds.json 里对应的那一条（第一条对应 I2
 
 ## 10_chair.json（列表，每份有两份以上评审的 proposal 一条）
 
+一般由 `ir.py chair` 写，不用你写。用子代理代做时（见 steps.md 第 10 节"不调用模型时"），按这个格式写：
+
 ```json
 [
   {
     "proposal_id": "I1",
+    "chair": "subagent",
+    "model": "",
+    "effort": "",
+    "family": "你自己的公司",
+    "reviewers": {"A": "codex", "B": "gemini"},
     "error": "",
-    "summary": {
-      "summary": "几位评审意见的概括，不下结论、不打分",
-      "consensus": [{"issue": "...", "raised_by": ["codex", "gemini"]}],
-      "disagreements": [{"topic": "...", "positions": ["codex：……", "gemini：……"]}],
-      "must_verify": ["作者必须亲自点开论文核实的说法"]
-    }
+    "summary": {"...": "ChairSummary 格式，见 assets/schemas.zh.json 里的 ChairSummary"}
   }
 ]
 ```
+
+`summary` 里提到评审都用代号：`raised_by`、`drawn_from` 写 `["A", "B"]`，综合的模型自己补的问题写 `["AC"]`。

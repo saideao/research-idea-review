@@ -17,6 +17,14 @@ effort = "medium"                  # 思考深度：low / medium / high / xhigh 
 fallbacks = "default"              # 被安全分类器拒答时由服务端自动换模型重跑；不要就写 "off"
 concurrency = 4
 
+[providers.strongest]
+type = "anthropic"                 # 综合元评审用你能用的最强模型，思考强度开高
+model = "claude-opus-5-5"          # 换模型只改这一行，比如 "claude-fable-5-1"（你的账号要能用）
+api_key_env = "ANTHROPIC_API_KEY"
+family = "anthropic"
+effort = "xhigh"
+concurrency = 2
+
 [providers.gpt]
 type = "openai_compatible"
 base_url = "https://api.openai.com/v1"
@@ -78,7 +86,7 @@ max_tokens = 8000
 
 # [providers.claude_sub]
 # type = "claude_code"             # 调用 claude 命令（Claude Code），用你登录的 Claude 订阅
-# model = "sonnet"                 # 可选：sonnet / opus / haiku 或完整模型名
+# model = "sonnet"                 # 可选：fable / opus / sonnet / haiku 或完整模型名
 # effort = "medium"                # 可选：思考深度
 # family = "anthropic"
 # concurrency = 2                  # 同时开几个，开太多容易撞上订阅的频率限制
@@ -105,7 +113,7 @@ reader = "claude"                  # 精读全文、判断文献质量、核对�
 miner = "claude"                   # 画版图、找空白
 writer = "claude"                  # 挖新方向、写 proposal（模型 A）
 reviewers = ["gpt", "gemini", "deepseek"]   # 元评审（模型 B、C、D），各开一个新对话
-chair = "gpt"                      # 汇总几位评审的共识和分歧，不下结论
+chair = "strongest"                # 综合元评审：把几位评审的意见综合成最终的 meta review，核对撞车说法，不下结论。用最强的模型
 
 [search]
 sources = ["semantic_scholar", "arxiv", "openalex"]

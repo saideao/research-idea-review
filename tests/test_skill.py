@@ -85,7 +85,7 @@ def only_fake_clis(tmp_path, monkeypatch):
     """PATH 里只留假的命令行工具，不碰本机真的 claude / codex / gemini。"""
     (tmp_path / "bin").mkdir(exist_ok=True)
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
-    for key in ir.API_ENV:
+    for key in (*ir.API_ENV, ir.CHAIR_ENV):
         monkeypatch.delenv(key, raising=False)
 
 
@@ -129,6 +129,18 @@ def test_skill_assets_match_the_cli_templates():
         cli_text = (templates / cli_name).read_text(encoding="utf-8").split("\n", 1)[1]
         skill_text = (SCRIPTS.parent / "assets" / skill_name).read_text(encoding="utf-8").split("\n", 1)[1]
         assert cli_text == skill_text, skill_name
+
+
+def test_skill_schemas_and_prompts_match_the_cli():
+    """skill 版的 JSON Schema 由命令行版的类型生成，评审和综合元评审的提示词是命令行版的副本。"""
+    from idea_review import prompts, schemas
+    from idea_review.llm import strict_schema
+    for lang in ("zh", "en"):
+        skill_schemas = json.loads((SCRIPTS.parent / "assets" / f"schemas.{lang}.json").read_text(encoding="utf-8"))
+        for name, schema in skill_schemas.items():
+            assert schema == strict_schema(getattr(schemas, name), lang), (lang, name)
+        for name in ("meta_review", "chair"):
+            assert (SCRIPTS.parent / "assets" / f"{name}.{lang}.md").read_text(encoding="utf-8") == prompts.raw(name, lang), (lang, name)
 
 
 def test_skill_report_lists_closest_papers_and_counts_overlaps(tmp_path, monkeypatch):
@@ -338,7 +350,8 @@ def test_review_calls_other_companies_and_report_is_complete(tmp_path, capsys, o
     assert json.loads((run / "usage.json").read_text())["codex"]["calls"] == 3
 
     run_ir("next", str(run))
-    assert "运行 report.py" in capsys.readouterr().out   # 每份只有一位评审，不用汇总
+    out = capsys.readouterr().out
+    assert "运行 report.py" in out and "只有一份成功的评审，没法做综合元评审" in out   # 每份只有一位评审，不用综合
     assert skill_report.main([str(run)]) == 0
     html = (run / "report.html").read_text(encoding="utf-8")
     assert "codex" in html and "停在了第 5 步" not in html and 'id="gap-G3"' in html and 'id="gap-G4"' not in html
@@ -388,22 +401,101 @@ def test_codebuddy_reviews_with_hunyuan_and_counts_as_tencent(tmp_path, capsys, 
     assert "--reviewer codebuddy" not in capsys.readouterr().out
 
 
-def test_two_reviewers_need_a_chair_summary(tmp_path, capsys, only_fake_clis):
+def chair_sample() -> dict:
+    chair = mock_json("ChairSummary")
+    chair["key_issues"][0]["raised_by"] = ["A", "评审 B"]
+    chair["key_issues"][1]["raised_by"] = ["AC"]
+    chair["overlap_check"][0].update(raised_by=["B"], verdict="not_supported")
+    chair["first_experiment"]["drawn_from"] = ["A"]
+    return chair
+
+
+def test_chair_combines_the_reviews_with_the_strongest_model(tmp_path, capsys, only_fake_clis):
+    """两家以上评审时，用最强的模型做综合元评审：claude 默认 opus、思考强度 xhigh。
+    评审名字换成代号发给它，报告里再换回来。"""
     run = walk_to_proposals(tmp_path, capsys)
     fake_cli(tmp_path, "codex", CODEX_OK)
     review = json.dumps(mock_json("MetaReview"), ensure_ascii=False)
     fake_cli(tmp_path, "gemini", f"print(json.dumps({{'response': {review!r}, 'stats': {{'models': {{'gemini-x': "
                                  f"{{'tokens': {{'prompt': 10, 'candidates': 5}}}}}}}}}}))")
     assert run_ir("review", str(run)) == 0
+    stdin_log = tmp_path / "chair_stdin.txt"
+    fake_cli(tmp_path, "claude", f"open({str(stdin_log)!r}, 'a').write(stdin)\n"
+                                 f"print(json.dumps({{'is_error': False, 'structured_output': {chair_sample()!r}, "
+                                 f"'modelUsage': {{'claude-opus-5-5': {{}}}}, 'usage': {{'input_tokens': 5000, 'output_tokens': 800}}}}))")
     capsys.readouterr()
     run_ir("next", str(run))
-    assert "汇总 I1、I2、I3 的评审意见" in capsys.readouterr().out
-    chairs = [{"proposal_id": f"I{i}", "error": "", "summary": mock_json("ChairSummary")} for i in (1, 2, 3)]
-    (run / "10_chair.json").write_text(json.dumps(chairs, ensure_ascii=False), encoding="utf-8")
+    out = capsys.readouterr().out
+    assert f"ir.py chair {run} --by claude" in out and "claude（opus）" in out and "gemini（pro）" in out
+
+    (tmp_path / "calls.jsonl").unlink()
+    assert run_ir("chair", str(run), "--by", "claude") == 0
+    assert "同一家（anthropic）" in capsys.readouterr().out   # 写 proposal 的也是 Claude，提醒一句
+    calls = [json.loads(line)["argv"] for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert len(calls) == 3
+    for argv in calls:
+        assert argv[argv.index("--model") + 1] == "opus" and argv[argv.index("--effort") + 1] == "xhigh" and "--json-schema" in argv
+        assert "codex" not in argv[argv.index("--system-prompt") + 1]
+    sent = stdin_log.read_text(encoding="utf-8")
+    assert "## 评审 A" in sent and "## 评审 B" in sent and "codex" not in sent and "gemini" not in sent
+    chairs = json.loads((run / "10_chair.json").read_text())
+    assert len(chairs) == 3
+    for c in chairs:
+        assert c["summary"] and c["chair"] == "claude" and c["model"] == "claude-opus-5-5" and c["effort"] == "xhigh"
+        assert c["reviewers"] == {"A": "codex", "B": "gemini"}
+    assert json.loads((run / "usage.json").read_text())["chair:claude"]["calls"] == 3
+
     run_ir("next", str(run))
     assert "运行 report.py" in capsys.readouterr().out
+    assert run_ir("chair", str(run), "--by", "claude") == 0 and "都已经做完了" in capsys.readouterr().out
     assert skill_report.main([str(run)]) == 0
-    assert "评审意见汇总" in (run / "report.html").read_text(encoding="utf-8")
+    html = (run / "report.html").read_text(encoding="utf-8")
+    assert "综合元评审" in html and "A = codex、B = gemini" in html and "claude（claude-opus-5-5 · xhigh）" in html
+    assert "2 家都提到" in html and "（codex、gemini；" in html and "综合时补充" in html and "材料不支持这个说法" in html
+    assert html.index("综合元评审") < html.index("评审列出的撞车论文")   # 综合的放在前面
+
+    # 旧版本由 agent 写的汇总照旧显示
+    legacy = [{"proposal_id": "I1", "error": "", "summary": {"summary": "旧的汇总", "consensus": [{"issue": "问题", "raised_by": ["codex"]}],
+                                                             "disagreements": [], "must_verify": []}}]
+    (run / "10_chair.json").write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+    run_ir("next", str(run))
+    assert "格式有问题" not in capsys.readouterr().out
+    assert skill_report.main([str(run)]) == 0
+    assert "旧的汇总" in (run / "report.html").read_text(encoding="utf-8")
+
+
+def test_chair_takes_another_model_and_effort(tmp_path, capsys, only_fake_clis, monkeypatch):
+    """环境变量 IDEA_REVIEW_CHAIR 换掉默认的模型，--by 再临时换；codex 用 -c 设思考强度，gemini 没有这个参数；
+    --dump 不调用模型，代号对应谁另外记。"""
+    run = walk_to_proposals(tmp_path, capsys)
+    fake_cli(tmp_path, "codex", CODEX_OK)
+    review = json.dumps(mock_json("MetaReview"), ensure_ascii=False)
+    fake_cli(tmp_path, "gemini", f"print(json.dumps({{'response': {review!r}, 'stats': {{'models': {{}}}}}}))")
+    assert run_ir("review", str(run)) == 0
+    fake_cli(tmp_path, "codex", f"open(argv[argv.index('-o') + 1], 'w').write({json.dumps(chair_sample(), ensure_ascii=False)!r})")
+    (tmp_path / "calls.jsonl").unlink()
+    monkeypatch.setenv(ir.CHAIR_ENV, "codex:gpt-big")
+    capsys.readouterr()
+    run_ir("next", str(run))
+    assert f"--by codex:gpt-big（用的是环境变量 {ir.CHAIR_ENV}）" in capsys.readouterr().out
+    assert run_ir("chair", str(run), "--effort", "max") == 0
+    for line in (tmp_path / "calls.jsonl").read_text().splitlines():
+        argv = json.loads(line)["argv"]
+        assert argv[argv.index("-m") + 1] == "gpt-big" and 'model_reasoning_effort="max"' in argv
+    assert all(c["model"] == "gpt-big" and c["family"] == "openai" for c in json.loads((run / "10_chair.json").read_text()))
+
+    (tmp_path / "calls.jsonl").unlink()
+    fake_cli(tmp_path, "gemini", "print(json.dumps({'response': '没有 JSON', 'stats': {'models': {}}}))")
+    assert run_ir("chair", str(run), "--by", "gemini", "--again") == 0
+    argv = json.loads((tmp_path / "calls.jsonl").read_text().splitlines()[0])["argv"]
+    assert argv[argv.index("-m") + 1] == "pro" and "--effort" not in argv
+    assert "保留" not in capsys.readouterr().err
+    assert all(c["chair"] == "codex" for c in json.loads((run / "10_chair.json").read_text()))   # 重做失败了，原来的留着
+
+    assert run_ir("chair", str(run), "--dump") == 0
+    dumped = (run / "chair_prompts" / "I1.md").read_text(encoding="utf-8")
+    assert "## 评审 A" in dumped and "codex" not in dumped and '"key_issues"' in dumped
+    assert json.loads((run / "chair_prompts" / "codes.json").read_text())["I1"] == {"A": "codex", "B": "gemini"}
 
 
 def test_failed_review_is_recorded_and_retried(tmp_path, capsys, only_fake_clis):

@@ -19,6 +19,14 @@ effort = "medium"                  # thinking effort: low / medium / high / xhig
 fallbacks = "default"              # if a safety classifier refuses, the server retries on a fallback model; set "off" to disable
 concurrency = 4
 
+[providers.strongest]
+type = "anthropic"                 # use the strongest model you have for the combined meta review, with high effort
+model = "claude-opus-5-5"          # to switch, change only this line, e.g. "claude-fable-5-1" (if your account has it)
+api_key_env = "ANTHROPIC_API_KEY"
+family = "anthropic"
+effort = "xhigh"
+concurrency = 2
+
 [providers.gpt]
 type = "openai_compatible"
 base_url = "https://api.openai.com/v1"
@@ -60,7 +68,7 @@ max_tokens = 8000
 
 # [providers.claude_sub]
 # type = "claude_code"             # runs the claude command (Claude Code) with your Claude subscription
-# model = "sonnet"                 # optional: sonnet / opus / haiku or a full model name
+# model = "sonnet"                 # optional: fable / opus / sonnet / haiku or a full model name
 # effort = "medium"                # optional: thinking effort
 # family = "anthropic"
 # concurrency = 2                  # how many run at once; too many may hit the subscription's rate limits
@@ -87,7 +95,7 @@ reader = "claude"                  # read full texts, judge paper quality, check
 miner = "claude"                   # map the landscape, find gaps
 writer = "claude"                  # mine new directions, write proposals (Model A)
 reviewers = ["gpt", "gemini", "deepseek"]   # meta reviews (Models B, C, D), each in a fresh conversation
-chair = "gpt"                      # summarize where the reviewers agree and disagree, no verdict
+chair = "strongest"                # combined meta review: merges the reviews into one, checks the overlap claims, no verdict. Use the strongest model
 
 [search]
 sources = ["semantic_scholar", "arxiv", "openalex"]

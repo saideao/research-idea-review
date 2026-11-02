@@ -209,20 +209,45 @@ class MetaReview(BaseModel):
     questions_for_author: list[str] = Field(description="作者在投入之前必须回答的 3 个问题")
 
 
-class ConsensusIssue(BaseModel):
+# ---------- 模型输出：综合元评审 ----------
+
+class KeyIssue(BaseModel):
     issue: str
-    raised_by: list[str] = Field(description="提出这个问题的评审名字")
+    raised_by: list[str] = Field(description="提出这个问题的评审代号，比如 A、B")
+    basis: str = Field(description="依据：评审给出的论文证据（注明页码）或推理")
+    source: Literal["paper", "inference"] = Field(description="paper：论文里写的；inference：推断的")
+
+
+class OverlapCheck(BaseModel):
+    paper_id: str = Field(description="评审说撞车的论文编号；附上的论文以外的写 external")
+    title: str
+    raised_by: list[str] = Field(description="说它撞车的评审代号")
+    claim: str = Field(description="评审说它做了什么、和 proposal 重合在哪")
+    verdict: Literal["confirmed", "partial", "not_supported", "unverifiable"] = Field(
+        description="对照精读笔记和全文节选核对评审的说法：confirmed 材料证实；partial 只部分重合；"
+                    "not_supported 材料不支持评审的说法；unverifiable 没有全文，核对不了")
+    evidence: str = Field(description="核对依据，注明页码；核对不了的，写作者该去查什么")
 
 
 class Disagreement(BaseModel):
     topic: str
-    positions: list[str] = Field(description="每条写清是哪位评审、怎么看")
+    positions: list[str] = Field(description="每条写清是哪位评审（用代号）、怎么看")
+    how_to_settle: str = Field(description="查什么、做什么实验能判断谁对")
+
+
+class FirstExperiment(Falsification):
+    """从各位评审的证伪实验里挑出或合成一个最该先做的。"""
+    drawn_from: list[str] = Field(description="综合了哪几位评审的实验设计（代号）")
 
 
 class ChairSummary(BaseModel):
-    summary: str = Field(description="几位评审意见的概括，不下结论、不打分")
-    consensus: list[ConsensusIssue] = Field(description="两位及以上评审都提到的问题")
-    disagreements: list[Disagreement]
+    summary: str = Field(description="一段话综合几位评审的看法：最大的风险是什么，哪里一致、哪里有分歧。不下结论、不打分")
+    key_issues: list[KeyIssue] = Field(description="合并去重后的问题（撞车、死因、可行性卡点都算），最致命的放前面，最多 6 条；"
+                                                   "只有一位评审提到的也要列")
+    overlap_check: list[OverlapCheck] = Field(description="评审列出的撞车论文，逐篇核对；没有就留空")
+    disagreements: list[Disagreement] = Field(description="评审之间说法相反的地方；没有就留空")
+    first_experiment: FirstExperiment
+    questions_for_author: list[str] = Field(description="合并去重后作者在投入之前必须回答的问题，最多 5 个")
     must_verify: list[str] = Field(description="作者必须亲自点开论文核实的说法")
 
 
@@ -292,11 +317,30 @@ DESCRIPTIONS_EN = {
     "Feasibility.bottleneck": "Where it is most likely to get stuck: data, compute, time or technique",
     "Falsification.kill_if": "Result that means you should give up",
     "Falsification.continue_if": "Result that makes it worth continuing",
-    "ChairSummary.summary": "Summary of the reviewers' opinions, with no verdict and no score",
-    "ChairSummary.consensus": "Issues raised by two or more reviewers",
+    "KeyIssue.raised_by": "Codes of the reviewers who raised this issue, e.g. A, B",
+    "KeyIssue.basis": "Basis: the paper evidence a reviewer gave (with page numbers) or the reasoning",
+    "KeyIssue.source": "paper: stated in a paper; inference: inferred",
+    "OverlapCheck.paper_id": "ID of a paper a reviewer says overlaps; write external for work outside the attached papers",
+    "OverlapCheck.raised_by": "Codes of the reviewers who say it overlaps",
+    "OverlapCheck.claim": "What the reviewers say it does and where it overlaps the proposal",
+    "OverlapCheck.verdict": "The reviewers' claim checked against the reading notes and full-text excerpts: confirmed = the "
+                            "material confirms it; partial = only a partial overlap; not_supported = the material does not "
+                            "support the claim; unverifiable = no full text, cannot be checked",
+    "OverlapCheck.evidence": "What the check rests on, with page numbers; if it cannot be checked, what the author should look up",
+    "Disagreement.positions": "For each, state which reviewer (by code) and what they think",
+    "Disagreement.how_to_settle": "What to look up or which experiment would show who is right",
+    "FirstExperiment": "The experiment to run first, picked from or combined out of the reviewers' falsification experiments.",
+    "FirstExperiment.kill_if": "Result that means you should give up",
+    "FirstExperiment.continue_if": "Result that makes it worth continuing",
+    "FirstExperiment.drawn_from": "Codes of the reviewers whose experiment designs it combines",
+    "ChairSummary.summary": "One paragraph combining the reviewers' views: what the biggest risk is, where they agree and "
+                            "where they disagree. No verdict, no score",
+    "ChairSummary.key_issues": "Issues merged and deduplicated (overlap, causes of death and feasibility bottlenecks all "
+                               "count), most fatal first, at most 6; include issues only one reviewer raised",
+    "ChairSummary.overlap_check": "Each overlapping paper the reviewers named, checked one by one; leave empty if none",
+    "ChairSummary.disagreements": "Places where the reviewers contradict each other; leave empty if none",
+    "ChairSummary.questions_for_author": "Questions the author must answer before investing, merged and deduplicated, at most 5",
     "ChairSummary.must_verify": "Claims the author must personally verify by opening the papers",
-    "ConsensusIssue.raised_by": "Names of the reviewers who raised this issue",
-    "Disagreement.positions": "For each, state which reviewer and what they think",
 }
 
 
@@ -358,5 +402,10 @@ class MetaReviewRecord(BaseModel):
 
 class ChairRecord(BaseModel):
     proposal_id: str
+    chair: str = ""                                  # 谁做的综合元评审
+    model: str = ""
+    effort: str = ""
+    family: str = ""
+    reviewers: dict[str, str] = {}                   # 评审代号 → 评审名字，比如 {"A": "codex"}
     summary: ChairSummary | None = None
     error: str = ""

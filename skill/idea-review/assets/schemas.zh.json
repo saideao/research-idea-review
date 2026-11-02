@@ -872,29 +872,6 @@
  },
  "ChairSummary": {
   "$defs": {
-   "ConsensusIssue": {
-    "properties": {
-     "issue": {
-      "title": "Issue",
-      "type": "string"
-     },
-     "raised_by": {
-      "description": "提出这个问题的评审名字",
-      "items": {
-       "type": "string"
-      },
-      "title": "Raised By",
-      "type": "array"
-     }
-    },
-    "required": [
-     "issue",
-     "raised_by"
-    ],
-    "title": "ConsensusIssue",
-    "type": "object",
-    "additionalProperties": false
-   },
    "Disagreement": {
     "properties": {
      "topic": {
@@ -902,42 +879,211 @@
       "type": "string"
      },
      "positions": {
-      "description": "每条写清是哪位评审、怎么看",
+      "description": "每条写清是哪位评审（用代号）、怎么看",
       "items": {
        "type": "string"
       },
       "title": "Positions",
       "type": "array"
+     },
+     "how_to_settle": {
+      "description": "查什么、做什么实验能判断谁对",
+      "title": "How To Settle",
+      "type": "string"
      }
     },
     "required": [
      "topic",
-     "positions"
+     "positions",
+     "how_to_settle"
     ],
     "title": "Disagreement",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "FirstExperiment": {
+    "description": "从各位评审的证伪实验里挑出或合成一个最该先做的。",
+    "properties": {
+     "experiment": {
+      "title": "Experiment",
+      "type": "string"
+     },
+     "compare_against": {
+      "title": "Compare Against",
+      "type": "string"
+     },
+     "metric": {
+      "title": "Metric",
+      "type": "string"
+     },
+     "kill_if": {
+      "description": "出现什么结果就该放弃",
+      "title": "Kill If",
+      "type": "string"
+     },
+     "continue_if": {
+      "description": "出现什么结果才值得继续",
+      "title": "Continue If",
+      "type": "string"
+     },
+     "est_days": {
+      "title": "Est Days",
+      "type": "string"
+     },
+     "drawn_from": {
+      "description": "综合了哪几位评审的实验设计（代号）",
+      "items": {
+       "type": "string"
+      },
+      "title": "Drawn From",
+      "type": "array"
+     }
+    },
+    "required": [
+     "experiment",
+     "compare_against",
+     "metric",
+     "kill_if",
+     "continue_if",
+     "est_days",
+     "drawn_from"
+    ],
+    "title": "FirstExperiment",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "KeyIssue": {
+    "properties": {
+     "issue": {
+      "title": "Issue",
+      "type": "string"
+     },
+     "raised_by": {
+      "description": "提出这个问题的评审代号，比如 A、B",
+      "items": {
+       "type": "string"
+      },
+      "title": "Raised By",
+      "type": "array"
+     },
+     "basis": {
+      "description": "依据：评审给出的论文证据（注明页码）或推理",
+      "title": "Basis",
+      "type": "string"
+     },
+     "source": {
+      "description": "paper：论文里写的；inference：推断的",
+      "enum": [
+       "paper",
+       "inference"
+      ],
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "issue",
+     "raised_by",
+     "basis",
+     "source"
+    ],
+    "title": "KeyIssue",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "OverlapCheck": {
+    "properties": {
+     "paper_id": {
+      "description": "评审说撞车的论文编号；附上的论文以外的写 external",
+      "title": "Paper Id",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "raised_by": {
+      "description": "说它撞车的评审代号",
+      "items": {
+       "type": "string"
+      },
+      "title": "Raised By",
+      "type": "array"
+     },
+     "claim": {
+      "description": "评审说它做了什么、和 proposal 重合在哪",
+      "title": "Claim",
+      "type": "string"
+     },
+     "verdict": {
+      "description": "对照精读笔记和全文节选核对评审的说法：confirmed 材料证实；partial 只部分重合；not_supported 材料不支持评审的说法；unverifiable 没有全文，核对不了",
+      "enum": [
+       "confirmed",
+       "partial",
+       "not_supported",
+       "unverifiable"
+      ],
+      "title": "Verdict",
+      "type": "string"
+     },
+     "evidence": {
+      "description": "核对依据，注明页码；核对不了的，写作者该去查什么",
+      "title": "Evidence",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paper_id",
+     "title",
+     "raised_by",
+     "claim",
+     "verdict",
+     "evidence"
+    ],
+    "title": "OverlapCheck",
     "type": "object",
     "additionalProperties": false
    }
   },
   "properties": {
    "summary": {
-    "description": "几位评审意见的概括，不下结论、不打分",
+    "description": "一段话综合几位评审的看法：最大的风险是什么，哪里一致、哪里有分歧。不下结论、不打分",
     "title": "Summary",
     "type": "string"
    },
-   "consensus": {
-    "description": "两位及以上评审都提到的问题",
+   "key_issues": {
+    "description": "合并去重后的问题（撞车、死因、可行性卡点都算），最致命的放前面，最多 6 条；只有一位评审提到的也要列",
     "items": {
-     "$ref": "#/$defs/ConsensusIssue"
+     "$ref": "#/$defs/KeyIssue"
     },
-    "title": "Consensus",
+    "title": "Key Issues",
+    "type": "array"
+   },
+   "overlap_check": {
+    "description": "评审列出的撞车论文，逐篇核对；没有就留空",
+    "items": {
+     "$ref": "#/$defs/OverlapCheck"
+    },
+    "title": "Overlap Check",
     "type": "array"
    },
    "disagreements": {
+    "description": "评审之间说法相反的地方；没有就留空",
     "items": {
      "$ref": "#/$defs/Disagreement"
     },
     "title": "Disagreements",
+    "type": "array"
+   },
+   "first_experiment": {
+    "$ref": "#/$defs/FirstExperiment"
+   },
+   "questions_for_author": {
+    "description": "合并去重后作者在投入之前必须回答的问题，最多 5 个",
+    "items": {
+     "type": "string"
+    },
+    "title": "Questions For Author",
     "type": "array"
    },
    "must_verify": {
@@ -951,8 +1097,11 @@
   },
   "required": [
    "summary",
-   "consensus",
+   "key_issues",
+   "overlap_check",
    "disagreements",
+   "first_experiment",
+   "questions_for_author",
    "must_verify"
   ],
   "title": "ChairSummary",

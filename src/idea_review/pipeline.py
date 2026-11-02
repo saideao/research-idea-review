@@ -17,10 +17,11 @@ import asyncio
 import json
 import os
 import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from . import prompts
 from .config import COUNT_LIMITS, Config
@@ -145,17 +146,12 @@ def proposal_text(pid: str, prop: Proposal, t: dict) -> str:
     )
 
 
-def meta_review_text(reviewer: str, mr: MetaReview, t: dict) -> str:
-    overlap = "\n".join(t["overlap_item"].format(id=o.paper_id, title=o.title, overlap=o.overlap, difference=o.difference)
-                        for o in mr.overlap) or f"  {mr.no_overlap_note}"
-    deaths = "\n".join(t["death_item"].format(reason=d.reason, basis=d.basis, source=t["death_source"][d.source])
-                       for d in mr.causes_of_death)
-    f = mr.cheapest_falsification
-    return t["meta_review_text"].format(
-        reviewer=reviewer, overlap=overlap, deaths=deaths, bottleneck=mr.feasibility.bottleneck,
-        workaround=mr.feasibility.workaround, experiment=f.experiment, compare=f.compare_against, metric=f.metric,
-        kill=f.kill_if, go=f.continue_if, days=f.est_days, questions=t["join"].join(mr.questions_for_author),
-    )
+def load_chairs(store: RunStore) -> list[ChairRecord]:
+    """旧版本的评审意见汇总格式不一样，读不进来就当没做过。"""
+    try:
+        return store.load("10_chair", list[ChairRecord]) or []
+    except ValidationError:
+        return []
 
 
 # ---------- 流程 ----------
@@ -267,7 +263,7 @@ class Pipeline:
             landscape = await self._timed(self.step_landscape(papers, screen, reviews))
             proposals = await self._timed(self.step_proposals(papers, reviews, landscape))
             metas = await self._timed(self.step_meta_reviews(papers, fulltexts, reviews, proposals))
-            await self._timed(self.step_chair(proposals, metas))
+            await self._timed(self.step_chair(papers, fulltexts, reviews, proposals, metas))
 
         from .report import build_report
         out = build_report(self.store.dir, self.cfg)
@@ -654,26 +650,53 @@ class Pipeline:
         self.store.save("09_meta_reviews", records, list[MetaReviewRecord])
         return records
 
-    async def step_chair(self, proposals: list[ProposalRecord], metas: list[MetaReviewRecord]) -> list[ChairRecord]:
-        saved = {c.proposal_id: c for c in (self.store.load("10_chair", list[ChairRecord]) or [])}
+    async def step_chair(self, papers, fulltexts, reviews, proposals: list[ProposalRecord],
+                         metas: list[MetaReviewRecord]) -> list[ChairRecord]:
+        saved = {c.proposal_id: c for c in load_chairs(self.store)}
         todo = []
         for rec in proposals:
-            ok = [m for m in metas if m.proposal_id == rec.proposal_id and m.review]
+            # 按评审名字排，代号 A、B 每次都对应同一位评审
+            ok = sorted((m for m in metas if m.proposal_id == rec.proposal_id and m.review), key=lambda m: m.reviewer)
             done = saved.get(rec.proposal_id)
             if rec.proposal and len(ok) >= 2 and not (done and done.summary):
                 todo.append((rec, ok))
         if not todo:
             return list(saved.values())
-        self.log(f"第 10 步：汇总评审意见（{len(todo)} 份）")
+        chair = self.cfg.provider("chair")
+        self.log(f"第 10 步：{chair.name} 把几位评审的意见综合成最终的元评审（{len(todo)} 份）")
+        if chair.family == self.cfg.provider("writer").family:
+            self.log(f"  注意：做综合元评审的 {chair.name} 和写 proposal 的是同一家（family = {chair.family}），可能偏向自家写的东西。")
+        strong, weak = self._digests(papers, reviews)
+        digests = "\n\n".join(strong + weak) or self.t["no_fulltext_notes"]
+        by_id = {p.paper_id: p for p in papers}
+
+        def excerpts(prop: Proposal, ok: list[MetaReviewRecord]) -> str:
+            # 先放几家评审都说撞车的，再放 proposal 自己引用的；要核对撞车，比评审多给一篇
+            named = Counter(pid for m in ok for pid in {o.paper_id for o in m.review.overlap})
+            ids = [pid for pid, _ in named.most_common()] + [c.paper_id for c in prop.closest_work]
+            ids = [pid for pid in dict.fromkeys(ids) if pid in by_id and fulltexts.get(pid) and fulltexts[pid].status == "ok"]
+            parts = []
+            for pid in ids[: self.cfg.review.reviewer_fulltext_papers + 1]:
+                text, _ = clip(self.store.file(fulltexts[pid].text_path).read_text(encoding="utf-8"), self.cfg.review.reviewer_fulltext_chars)
+                parts.append(self.t["excerpt"].format(line=paper_line(by_id[pid], self.t), text=text))
+            return "\n\n".join(parts) or self.t["no_chair_excerpts"]
 
         async def one(rec, ok) -> ChairRecord:
-            text = "\n\n".join(meta_review_text(m.reviewer, m.review, self.t) for m in ok)
+            # 评审的名字换成代号 A、B……，免得综合的模型看牌子偏信哪一家
+            codes = {chr(ord("A") + i): m.reviewer for i, m in enumerate(ok)}
+            text = "\n\n".join(f"{self.t['chair_reviewer'].format(code=code)}\n{m.review.model_dump_json(indent=1)}"
+                                for code, m in zip(codes, ok))
+            record = ChairRecord(proposal_id=rec.proposal_id, chair=chair.name, model=chair.model, effort=chair.effort or "",
+                                 family=chair.family, reviewers=codes)
             try:
-                summary = await self._call("chair", "chair", ChairSummary, proposal_title=f"{rec.proposal_id} {rec.proposal.title}", reviews=text)
+                summary = await self._call("chair", "chair", ChairSummary, proposal=proposal_text(rec.proposal_id, rec.proposal, self.t),
+                                           n=len(ok), codes=self.t["names_sep"].join(codes), reviews=text, digests=digests,
+                                           fulltexts=excerpts(rec.proposal, ok))
             except LLMError as e:
-                self.log(f"  {rec.proposal_id} 汇总失败：{e}")
-                return ChairRecord(proposal_id=rec.proposal_id, error=str(e))
-            return ChairRecord(proposal_id=rec.proposal_id, summary=summary)
+                self.log(f"  {rec.proposal_id} 综合元评审失败：{e}")
+                return record.model_copy(update={"error": str(e)})
+            self.log(f"  {chair.name} 综合完 {rec.proposal_id}")
+            return record.model_copy(update={"summary": summary})
 
         for c in await asyncio.gather(*(one(r, ok) for r, ok in todo)):
             saved[c.proposal_id] = c

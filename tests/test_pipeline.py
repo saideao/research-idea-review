@@ -301,6 +301,43 @@ def test_resume_redoes_later_steps_when_a_failed_read_succeeds(tmp_path, mock_co
     assert (run_dir / "10_chair.json").exists()
 
 
+def test_chair_sees_reviewer_codes_and_report_maps_them_back(tmp_path, mock_config, monkeypatch, offline):
+    """综合元评审拿到的评审意见只带代号 A、B，看不到是哪家；报告里换回评审名字。旧格式的汇总读不进来就重做。"""
+    sent = []
+    real_complete = MockProvider._complete
+
+    async def spy(self, system, user, schema, schema_name, lang):
+        if schema_name == "ChairSummary":
+            sent.append(system + user)
+        return await real_complete(self, system, user, schema, schema_name, lang)
+    monkeypatch.setattr(MockProvider, "_complete", spy)
+    assert run_cli(tmp_path, mock_config) == 0
+    run_dir = tmp_path / "r"
+    sent = [re.sub(r"\[mock:[^\]]*\]", "", text) for text in sent]   # mock 模型的输出里带着它自己的名字，去掉再看
+    assert sent and all("## 评审 A" in text and "## 评审 B" in text and "reviewer_" not in text for text in sent)
+    assert all("[P0" in text for text in sent)   # 带上了精读笔记和全文节选，用来核对撞车
+    chairs = load(run_dir, "10_chair")
+    assert chairs and all(c["summary"] and c["chair"] == "reviewer_b" and c["model"] == "mock-b"
+                          and c["reviewers"] == {"A": "reviewer_b", "B": "reviewer_c"} for c in chairs)
+
+    summary = chairs[0]["summary"]
+    summary["key_issues"][0]["raised_by"] = ["A", "评审 B"]
+    summary["key_issues"][1]["raised_by"] = ["AC"]
+    (run_dir / "10_chair.json").write_text(json.dumps(chairs, ensure_ascii=False), encoding="utf-8")
+    from idea_review.report import build_report
+    html = build_report(run_dir, mock_config).read_text(encoding="utf-8")
+    assert "综合元评审" in html and "A = reviewer_b、B = reviewer_c" in html
+    assert "2 家都提到" in html and "（reviewer_b、reviewer_c；" in html and "综合时补充" in html
+    assert html.index("综合元评审") < html.index("评审列出的撞车论文")
+
+    legacy = [{"proposal_id": "I1", "error": "", "summary": {"summary": "旧的汇总", "consensus": [], "disagreements": [], "must_verify": []}}]
+    (run_dir / "10_chair.json").write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+    assert "旧的汇总" not in build_report(run_dir, mock_config).read_text(encoding="utf-8")
+    sent.clear()
+    assert resume_cli(tmp_path, mock_config) == 0
+    assert sent and all(c["summary"] and "key_issues" in c["summary"] for c in load(run_dir, "10_chair"))
+
+
 def test_mock_runs_need_queries_from_the_command_line(tmp_path, mock_config, offline, capsys):
     argv = ["run", IDEA, "--config", str(mock_config.path), "--runs-dir", str(tmp_path), "--name", "r"]
     assert cli.main(argv) == 2

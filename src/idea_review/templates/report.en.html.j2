@@ -163,7 +163,7 @@
 
   {% if missing or failed_reads %}
   <h3>Highly relevant, but not read in full</h3>
-  <p class="lead">Download the PDF, name it by its ID and put it in <code>{{ run_dir }}/papers/</code> (e.g. <code>P07.pdf</code>), then run <code>idea-review run --resume {{ run_dir }}</code>. The program extracts the full text, reads it, and redoes the steps from finding gaps through the summary using the new literature; papers already read are not read again. For papers whose reading failed, just run the same command again to retry.</p>
+  <p class="lead">Download the PDF, name it by its ID and put it in <code>{{ run_dir }}/papers/</code> (e.g. <code>P07.pdf</code>), then run <code>idea-review run --resume {{ run_dir }}</code>. The program extracts the full text, reads it, and redoes the steps from finding gaps through the combined meta review using the new literature; papers already read are not read again. For papers whose reading failed, just run the same command again to retry.</p>
   <div class="table-wrap"><table>
     <thead><tr><th>ID</th><th>Paper</th><th>Reason</th></tr></thead>
     <tbody>
@@ -262,6 +262,28 @@
     {% if prop.questions_for_author %}<h4>For you to answer</h4>{{ plist(prop.questions_for_author) }}{% endif %}
 
     <h3>Meta reviews</h3>
+    {% if v.chair %}{% set c = v.chair %}{% set s = c.s %}
+    {% set verdicts = {"confirmed": ("Overlap confirmed by the material", "b-warn"), "partial": ("Partial overlap", "b-medium"), "not_supported": ("Not supported by the material", "b-high"), "unverifiable": ("Cannot be checked", "b-unk")} %}
+    <div class="chair">
+      <b>Combined meta review</b> <span class="meta">{{ c.chair }}{% if c.detail %} ({{ c.detail }}){% endif %} combined the opinions of {{ c.n }} reviewers ({{ c.legend }}); no verdict</span>
+      {%- if c.family and c.family == cfg.provider("writer").family %} <span class="badge b-warn">Same company as the proposal writer</span>{% endif %}
+      <p>{{ s.summary | refs }}</p>
+      {% if s.key_issues %}<h4>Key issues</h4>
+      <ol class="tight">{% for i in s.key_issues %}<li>{{ i.issue | refs }}{% if i.everyone %} <span class="badge b-warn">raised by all {{ c.n }}</span>{% endif %}
+        <span class="meta">({{ i.raised_by | join(", ") }}; {{ "paper" if i.source == "paper" else "inference" }}: {{ i.basis | refs }})</span></li>{% endfor %}</ol>{% endif %}
+      {% if s.overlap_check %}<h4>Overlap claims checked</h4>
+      <ul class="tight">{% for o in s.overlap_check %}{% set vd = verdicts.get(o.verdict, (o.verdict, "b-unk")) %}<li>{% if o.paper_id != "external" %}{{ o.paper_id | refs }} {% endif %}{{ o.title }} <span class="badge {{ vd[1] }}">{{ vd[0] }}</span> <span class="meta">({{ o.raised_by | join(", ") }})</span><br>
+        Reviewers say: {{ o.claim | refs }}<br><span class="meta">Check: {{ o.evidence | refs }}</span></li>{% endfor %}</ul>{% endif %}
+      {% if s.disagreements %}<h4>Where they disagree</h4>
+      <ul class="tight">{% for d in s.disagreements %}<li><b>{{ d.topic }}</b>: {{ d.positions | join("; ") | refs }}<br><span class="meta">How to tell who is right: {{ d.how_to_settle | refs }}</span></li>{% endfor %}</ul>{% endif %}
+      {% set f = s.first_experiment %}
+      <h4>Experiment to run first</h4>
+      <p style="margin:4px 0">{{ f.experiment | refs }}<br><span class="meta">Compare against: {{ f.compare_against }}; metric: {{ f.metric }}; duration: {{ f.est_days }}; taken from: {{ f.drawn_from | join(", ") }}</span><br>
+        <span class="kill">Give up if: {{ f.kill_if | refs }}</span><br><span class="go">Continue if: {{ f.continue_if | refs }}</span></p>
+      {% if s.questions_for_author %}<h4>Questions to answer before investing</h4>{{ plist(s.questions_for_author) }}{% endif %}
+      {% if s.must_verify %}<h4>You must verify yourself</h4>{{ plist(s.must_verify) }}{% endif %}
+    </div>
+    {% endif %}
     {% set tl = v.tally %}{% if tl.n %}
     <div class="callout">
       <b>Overlapping papers named by the reviewers</b> <span class="meta">(counted by the program across {{ tl.n }} reviewer{{ "s" if tl.n > 1 }})</span>
@@ -270,17 +292,6 @@
         {%- if tl.n > 1 and row.by | length == 1 %} <span class="badge b-warn">Only one reviewer says so; unstable</span>{% endif %}</li>{% endfor %}</ul>
       <p class="meta">Open and check these yourself even when several reviewers agree: they all saw the same material and can be wrong together.{% if tl.n == 1 %} There is only one reviewer this time, so there is nothing to compare against.{% endif %}</p>
       {% else %}<p class="meta">No reviewer found an overlapping paper among the attached ones. That does not mean nobody has done it.</p>{% endif %}
-    </div>
-    {% endif %}
-    {% if v.chair and v.chair.summary %}{% set s = v.chair.summary %}
-    <div class="chair">
-      <b>Summary of the reviews</b> (compiled by {{ cfg.provider("chair").name }}, no verdict)
-      <p>{{ s.summary | refs }}</p>
-      {% if s.consensus %}<h4>Issues several reviewers raised</h4>
-      <ul class="tight">{% for c in s.consensus %}<li>{{ c.issue | refs }} <span class="meta">({{ c.raised_by | join(", ") }})</span></li>{% endfor %}</ul>{% endif %}
-      {% if s.disagreements %}<h4>Where they disagree</h4>
-      <ul class="tight">{% for d in s.disagreements %}<li><b>{{ d.topic }}</b>: {{ d.positions | join("; ") | refs }}</li>{% endfor %}</ul>{% endif %}
-      {% if s.must_verify %}<h4>You must verify yourself</h4>{{ plist(s.must_verify) }}{% endif %}
     </div>
     {% endif %}
     <div class="reviewers">
@@ -335,7 +346,7 @@
       <tr><td>Find gaps</td><td>{{ cfg.provider("miner").describe(lang) }}</td></tr>
       <tr><td>Mine new directions, write proposals (Model A)</td><td>{{ cfg.provider("writer").describe(lang) }}</td></tr>
       <tr><td>Meta review (Models B, C, D…)</td><td>{% for p in cfg.reviewer_providers() %}{{ p.describe(lang) }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
-      <tr><td>Summarize reviews</td><td>{{ cfg.provider("chair").describe(lang) }}</td></tr>
+      <tr><td>Combined meta review</td><td>{{ cfg.provider("chair").describe(lang) }}</td></tr>
     </tbody>
   </table></div>
   {% if usage %}

@@ -1,13 +1,13 @@
 ---
 name: idea-review
-description: 给一个还很粗糙的研究 idea 做文献调研和可行性审查：拆检索词，在 Semantic Scholar、arXiv、OpenAlex 上检索，按摘要初筛，下载开放获取的全文精读并评质量，找出有论文证据的空白，写 proposal，再请别家公司的模型（本机的 codex、gemini、claude、codebuddy 命令行工具或 OpenAI 兼容接口）做元评审，最后出一份 HTML 报告。用户说"这个 idea 有没有人做过""帮我查查相关文献""这个研究想法靠不靠谱""找找这个方向还有什么空白""把这个想法写成 proposal 再找人挑毛病"，或者 review my research idea、is this idea novel、find literature gaps 时，都用这个 skill，哪怕用户没提报告或评审。
+description: 给一个还很粗糙的研究 idea 做文献调研和可行性审查：拆检索词，在 Semantic Scholar、arXiv、OpenAlex 上检索，按摘要初筛，下载开放获取的全文精读并评质量，找出有论文证据的空白，写 proposal，再请别家公司的模型（本机的 codex、gemini、claude、codebuddy 命令行工具或 OpenAI 兼容接口）做元评审，用最强的模型把几家评审综合成最终的元评审，最后出一份 HTML 报告。用户说"这个 idea 有没有人做过""帮我查查相关文献""这个研究想法靠不靠谱""找找这个方向还有什么空白""把这个想法写成 proposal 再找人挑毛病"，或者 review my research idea、is this idea novel、find literature gaps 时，都用这个 skill，哪怕用户没提报告或评审。
 ---
 
 # idea-review：查文献、找空白、写 proposal、换模型挑毛病
 
-分工：要动脑子的步骤你自己做（拆检索词、初筛、精读评质量、找空白、写 proposal、汇总评审意见）；固定的步骤交给脚本：
+分工：要动脑子的步骤你自己做（拆检索词、初筛、精读评质量、找空白、写 proposal）；固定的步骤交给脚本：
 
-- `scripts/ir.py`：检索、下载全文、检查文件格式和进度、调用别家模型做元评审。
+- `scripts/ir.py`：检索、下载全文、检查文件格式和进度、调用别家模型做元评审、调用最强的模型做综合元评审。
 - `scripts/report.py`：把运行目录里的结果渲染成 HTML 报告。
 
 这样分是因为：检索接口有限流和去重的细节，PDF 要校验、按页标号；调别家命令行工具的参数错一个就会读到用户的配置或者改走 API 计费；"证据不够就停"这条规矩要每次都执行，不能看心情。这些写死在脚本里，你把精力放在读论文和写东西上。
@@ -65,7 +65,13 @@ uv run SKILL_DIR/scripts/ir.py review RUN --reviewer codex --reviewer gemini
 
 每份可能要几分钟，放到后台跑，跑完再 `next`。`codebuddy` 是腾讯 CodeBuddy 的命令行，默认用混元 hy3；它也能调别家的模型（`--reviewer codebuddy:模型名`），算哪家按模型名定。评审在空的临时目录里、新会话里独立完成，只看得到 proposal 和论文材料。本机一个别家的模型都没有时，见第 9 节的"没有别家模型时"。
 
-**10. 汇总**：每份 proposal 有两份及以上成功的评审时，写 `RUN/10_chair.json`。只有一份评审的跳过。见第 10 节。
+**10. 综合元评审**：每份 proposal 有两份及以上成功的评审时，`next` 会让你运行：
+
+```bash
+uv run SKILL_DIR/scripts/ir.py chair RUN --by claude
+```
+
+它用最强的模型把几位评审的意见综合成一份最终的元评审：合并去重最要紧的问题，对照精读笔记和全文核对评审说的撞车论文，列出分歧，挑出最该先做的证伪实验。`--by` 选本机能用的最强的一家，`next` 会列出来；不写型号时 claude 用 opus（现在是 Opus 5.5）、gemini 用 pro。用户指定了型号就写成 `--by claude:fable` 这样；用户设了环境变量 `IDEA_REVIEW_CHAIR`（比如 `claude:fable`），不写 `--by` 就用它。思考强度默认 xhigh。可以和你是同一家：它在新会话里做，不知道 proposal 是谁写的。这一步也要花用户的额度，先说清用哪个模型，用户点头再跑；每份可能要十几分钟，放到后台。用户不想再花钱就跳过。只有一份评审的 proposal 没法综合。见第 10 节。
 
 **11. 出报告**：
 
@@ -73,7 +79,7 @@ uv run SKILL_DIR/scripts/ir.py review RUN --reviewer codex --reviewer gemini
 python3 SKILL_DIR/scripts/report.py RUN
 ```
 
-把报告路径告诉用户（浏览器打开）。回复里简短说清：读了几篇全文、质量怎么分布、找到几个空白、几家评审都提到的问题是什么。不要替用户下"值得做"或"不值得做"的结论，拍板的是用户。
+把报告路径告诉用户（浏览器打开）。回复里简短说清：读了几篇全文、质量怎么分布、找到几个空白、综合元评审里最要紧的问题和最该先做的实验是什么。不要替用户下"值得做"或"不值得做"的结论，拍板的是用户。
 
 **12. 在 WorkBuddy 里：发布成网页应用**
 
@@ -114,7 +120,7 @@ python3 SKILL_DIR/scripts/report.py RUN --site
 | `07_seeds.json` | 你 | 新方向 |
 | `08_proposals.json` | 你 | proposal |
 | `09_meta_reviews.json`、`usage.json` | review | 元评审、评审用量 |
-| `10_chair.json` | 你 | 评审意见汇总 |
+| `10_chair.json` | chair | 综合元评审 |
 | `report.html` | report.py | 报告 |
 | `site/index.html` | report.py --site | 发布用的报告副本，不含本机路径 |
 

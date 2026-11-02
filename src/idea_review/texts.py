@@ -77,17 +77,8 @@ ZH = {
     ),
     "excerpt": "{line}\n<<<全文节选开始\n{text}\n全文节选结束>>>",
     "no_excerpts": "（proposal 引用的论文没有可用的全文）",
-    "overlap_item": "  - {id} {title}：重合 {overlap}；区别 {difference}",
-    "death_item": "  - {reason}（依据：{basis}；{source}）",
-    "death_source": {"paper": "论文", "inference": "推断"},
-    "meta_review_text": (
-        "## 评审：{reviewer}\n"
-        "撞车：\n{overlap}\n"
-        "死因：\n{deaths}\n"
-        "可行性：卡点 {bottleneck}；绕法 {workaround}\n"
-        "证伪实验：{experiment}；对比 {compare}；指标 {metric}；放弃条件 {kill}；继续条件 {go}；用时 {days}\n"
-        "必须回答的问题：{questions}"
-    ),
+    "chair_reviewer": "## 评审 {code}",
+    "no_chair_excerpts": "（评审列出的撞车论文和 proposal 引用的论文都没有可用的全文）",
     # 结构化输出
     "json_instruction": "只输出一个 JSON 对象，不要输出其他文字。JSON 必须符合下面的 JSON Schema（{name}）：",
     "retry": "上一次的输出没有通过格式校验：{error}\n请重新输出完整的 JSON，只输出 JSON。",
@@ -159,18 +150,8 @@ EN = {
     ),
     "excerpt": "{line}\n<<<FULL-TEXT EXCERPT START\n{text}\nFULL-TEXT EXCERPT END>>>",
     "no_excerpts": "(none of the papers cited by the proposal has a usable full text)",
-    "overlap_item": "  - {id} {title}: overlap {overlap}; difference {difference}",
-    "death_item": "  - {reason} (basis: {basis}; {source})",
-    "death_source": {"paper": "from a paper", "inference": "inferred"},
-    "meta_review_text": (
-        "## Reviewer: {reviewer}\n"
-        "Overlap:\n{overlap}\n"
-        "Causes of death:\n{deaths}\n"
-        "Feasibility: bottleneck {bottleneck}; workaround {workaround}\n"
-        "Falsification experiment: {experiment}; compare against {compare}; metric {metric}; "
-        "kill if {kill}; continue if {go}; duration {days}\n"
-        "Questions the author must answer: {questions}"
-    ),
+    "chair_reviewer": "## Reviewer {code}",
+    "no_chair_excerpts": "(none of the papers named by the reviewers or cited by the proposal has a usable full text)",
     "json_instruction": "Output a single JSON object and nothing else. The JSON must follow this JSON Schema ({name}):",
     "retry": "The previous output failed validation: {error}\nOutput the complete JSON again, and only the JSON.",
     "ping_system": "You are a test assistant. Output JSON in the required format.",

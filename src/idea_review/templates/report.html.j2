@@ -163,7 +163,7 @@
 
   {% if missing or failed_reads %}
   <h3>很相关，但没读到全文</h3>
-  <p class="lead">把 PDF 下载下来，按编号命名放进 <code>{{ run_dir }}/papers/</code>（比如 <code>P07.pdf</code>），再运行 <code>idea-review run --resume {{ run_dir }}</code>。程序会抽出全文、补精读，再按新的文献重做找空白到汇总这几步；已经读过的论文不重读。精读失败的，直接再运行这条命令就会重读。</p>
+  <p class="lead">把 PDF 下载下来，按编号命名放进 <code>{{ run_dir }}/papers/</code>（比如 <code>P07.pdf</code>），再运行 <code>idea-review run --resume {{ run_dir }}</code>。程序会抽出全文、补精读，再按新的文献重做找空白到综合元评审这几步；已经读过的论文不重读。精读失败的，直接再运行这条命令就会重读。</p>
   <div class="table-wrap"><table>
     <thead><tr><th>编号</th><th>论文</th><th>原因</th></tr></thead>
     <tbody>
@@ -262,6 +262,28 @@
     {% if prop.questions_for_author %}<h4>需要你自己回答</h4>{{ plist(prop.questions_for_author) }}{% endif %}
 
     <h3>元评审</h3>
+    {% if v.chair %}{% set c = v.chair %}{% set s = c.s %}
+    {% set verdicts = {"confirmed": ("材料证实撞车", "b-warn"), "partial": ("部分重合", "b-medium"), "not_supported": ("材料不支持这个说法", "b-high"), "unverifiable": ("核对不了", "b-unk")} %}
+    <div class="chair">
+      <b>综合元评审</b> <span class="meta">由 {{ c.chair }}{% if c.detail %}（{{ c.detail }}）{% endif %} 综合 {{ c.n }} 位评审的意见（{{ c.legend }}），不下结论</span>
+      {%- if c.family and c.family == cfg.provider("writer").family %} <span class="badge b-warn">和写 proposal 的是同一家模型</span>{% endif %}
+      <p>{{ s.summary | refs }}</p>
+      {% if s.key_issues %}<h4>要紧的问题</h4>
+      <ol class="tight">{% for i in s.key_issues %}<li>{{ i.issue | refs }}{% if i.everyone %} <span class="badge b-warn">{{ c.n }} 家都提到</span>{% endif %}
+        <span class="meta">（{{ i.raised_by | join("、") }}；{{ "论文" if i.source == "paper" else "推断" }}：{{ i.basis | refs }}）</span></li>{% endfor %}</ol>{% endif %}
+      {% if s.overlap_check %}<h4>撞车论文核对</h4>
+      <ul class="tight">{% for o in s.overlap_check %}{% set vd = verdicts.get(o.verdict, (o.verdict, "b-unk")) %}<li>{% if o.paper_id != "external" %}{{ o.paper_id | refs }} {% endif %}{{ o.title }} <span class="badge {{ vd[1] }}">{{ vd[0] }}</span> <span class="meta">（{{ o.raised_by | join("、") }}）</span><br>
+        评审说：{{ o.claim | refs }}<br><span class="meta">核对：{{ o.evidence | refs }}</span></li>{% endfor %}</ul>{% endif %}
+      {% if s.disagreements %}<h4>有分歧的地方</h4>
+      <ul class="tight">{% for d in s.disagreements %}<li><b>{{ d.topic }}</b>：{{ d.positions | join("；") | refs }}<br><span class="meta">怎么判断谁对：{{ d.how_to_settle | refs }}</span></li>{% endfor %}</ul>{% endif %}
+      {% set f = s.first_experiment %}
+      <h4>最该先做的实验</h4>
+      <p style="margin:4px 0">{{ f.experiment | refs }}<br><span class="meta">对比：{{ f.compare_against }}；指标：{{ f.metric }}；用时：{{ f.est_days }}；取自：{{ f.drawn_from | join("、") }}</span><br>
+        <span class="kill">放弃：{{ f.kill_if | refs }}</span><br><span class="go">继续：{{ f.continue_if | refs }}</span></p>
+      {% if s.questions_for_author %}<h4>投入之前要回答的问题</h4>{{ plist(s.questions_for_author) }}{% endif %}
+      {% if s.must_verify %}<h4>你必须亲自核实</h4>{{ plist(s.must_verify) }}{% endif %}
+    </div>
+    {% endif %}
     {% set tl = v.tally %}{% if tl.n %}
     <div class="callout">
       <b>评审列出的撞车论文</b> <span class="meta">（程序按 {{ tl.n }} 家评审的意见统计）</span>
@@ -270,17 +292,6 @@
         {%- if tl.n > 1 and row.by | length == 1 %} <span class="badge b-warn">只有一家这么说，不稳</span>{% endif %}</li>{% endfor %}</ul>
       <p class="meta">几家都列出的，也要自己点开正文核实：评审看的是同一批材料，可能一起看错。{% if tl.n == 1 %}这次只有一家评审，没法互相对照。{% endif %}</p>
       {% else %}<p class="meta">评审都没在附上的论文里找到撞车的。这不等于没人做过。</p>{% endif %}
-    </div>
-    {% endif %}
-    {% if v.chair and v.chair.summary %}{% set s = v.chair.summary %}
-    <div class="chair">
-      <b>评审意见汇总</b>（由 {{ cfg.provider("chair").name }} 整理，不下结论）
-      <p>{{ s.summary | refs }}</p>
-      {% if s.consensus %}<h4>几家都提到的问题</h4>
-      <ul class="tight">{% for c in s.consensus %}<li>{{ c.issue | refs }} <span class="meta">（{{ c.raised_by | join("、") }}）</span></li>{% endfor %}</ul>{% endif %}
-      {% if s.disagreements %}<h4>有分歧的地方</h4>
-      <ul class="tight">{% for d in s.disagreements %}<li><b>{{ d.topic }}</b>：{{ d.positions | join("；") | refs }}</li>{% endfor %}</ul>{% endif %}
-      {% if s.must_verify %}<h4>你必须亲自核实</h4>{{ plist(s.must_verify) }}{% endif %}
     </div>
     {% endif %}
     <div class="reviewers">
@@ -335,7 +346,7 @@
       <tr><td>找空白</td><td>{{ cfg.provider("miner").describe() }}</td></tr>
       <tr><td>挖新方向、写 proposal（模型 A）</td><td>{{ cfg.provider("writer").describe() }}</td></tr>
       <tr><td>元评审（模型 B、C、D…）</td><td>{% for p in cfg.reviewer_providers() %}{{ p.describe() }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
-      <tr><td>汇总评审意见</td><td>{{ cfg.provider("chair").describe() }}</td></tr>
+      <tr><td>综合元评审</td><td>{{ cfg.provider("chair").describe() }}</td></tr>
     </tbody>
   </table></div>
   {% if usage %}

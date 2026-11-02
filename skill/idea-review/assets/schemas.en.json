@@ -872,29 +872,6 @@
  },
  "ChairSummary": {
   "$defs": {
-   "ConsensusIssue": {
-    "properties": {
-     "issue": {
-      "title": "Issue",
-      "type": "string"
-     },
-     "raised_by": {
-      "description": "Names of the reviewers who raised this issue",
-      "items": {
-       "type": "string"
-      },
-      "title": "Raised By",
-      "type": "array"
-     }
-    },
-    "required": [
-     "issue",
-     "raised_by"
-    ],
-    "title": "ConsensusIssue",
-    "type": "object",
-    "additionalProperties": false
-   },
    "Disagreement": {
     "properties": {
      "topic": {
@@ -902,42 +879,211 @@
       "type": "string"
      },
      "positions": {
-      "description": "For each, state which reviewer and what they think",
+      "description": "For each, state which reviewer (by code) and what they think",
       "items": {
        "type": "string"
       },
       "title": "Positions",
       "type": "array"
+     },
+     "how_to_settle": {
+      "description": "What to look up or which experiment would show who is right",
+      "title": "How To Settle",
+      "type": "string"
      }
     },
     "required": [
      "topic",
-     "positions"
+     "positions",
+     "how_to_settle"
     ],
     "title": "Disagreement",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "FirstExperiment": {
+    "description": "The experiment to run first, picked from or combined out of the reviewers' falsification experiments.",
+    "properties": {
+     "experiment": {
+      "title": "Experiment",
+      "type": "string"
+     },
+     "compare_against": {
+      "title": "Compare Against",
+      "type": "string"
+     },
+     "metric": {
+      "title": "Metric",
+      "type": "string"
+     },
+     "kill_if": {
+      "description": "Result that means you should give up",
+      "title": "Kill If",
+      "type": "string"
+     },
+     "continue_if": {
+      "description": "Result that makes it worth continuing",
+      "title": "Continue If",
+      "type": "string"
+     },
+     "est_days": {
+      "title": "Est Days",
+      "type": "string"
+     },
+     "drawn_from": {
+      "description": "Codes of the reviewers whose experiment designs it combines",
+      "items": {
+       "type": "string"
+      },
+      "title": "Drawn From",
+      "type": "array"
+     }
+    },
+    "required": [
+     "experiment",
+     "compare_against",
+     "metric",
+     "kill_if",
+     "continue_if",
+     "est_days",
+     "drawn_from"
+    ],
+    "title": "FirstExperiment",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "KeyIssue": {
+    "properties": {
+     "issue": {
+      "title": "Issue",
+      "type": "string"
+     },
+     "raised_by": {
+      "description": "Codes of the reviewers who raised this issue, e.g. A, B",
+      "items": {
+       "type": "string"
+      },
+      "title": "Raised By",
+      "type": "array"
+     },
+     "basis": {
+      "description": "Basis: the paper evidence a reviewer gave (with page numbers) or the reasoning",
+      "title": "Basis",
+      "type": "string"
+     },
+     "source": {
+      "description": "paper: stated in a paper; inference: inferred",
+      "enum": [
+       "paper",
+       "inference"
+      ],
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "issue",
+     "raised_by",
+     "basis",
+     "source"
+    ],
+    "title": "KeyIssue",
+    "type": "object",
+    "additionalProperties": false
+   },
+   "OverlapCheck": {
+    "properties": {
+     "paper_id": {
+      "description": "ID of a paper a reviewer says overlaps; write external for work outside the attached papers",
+      "title": "Paper Id",
+      "type": "string"
+     },
+     "title": {
+      "title": "Title",
+      "type": "string"
+     },
+     "raised_by": {
+      "description": "Codes of the reviewers who say it overlaps",
+      "items": {
+       "type": "string"
+      },
+      "title": "Raised By",
+      "type": "array"
+     },
+     "claim": {
+      "description": "What the reviewers say it does and where it overlaps the proposal",
+      "title": "Claim",
+      "type": "string"
+     },
+     "verdict": {
+      "description": "The reviewers' claim checked against the reading notes and full-text excerpts: confirmed = the material confirms it; partial = only a partial overlap; not_supported = the material does not support the claim; unverifiable = no full text, cannot be checked",
+      "enum": [
+       "confirmed",
+       "partial",
+       "not_supported",
+       "unverifiable"
+      ],
+      "title": "Verdict",
+      "type": "string"
+     },
+     "evidence": {
+      "description": "What the check rests on, with page numbers; if it cannot be checked, what the author should look up",
+      "title": "Evidence",
+      "type": "string"
+     }
+    },
+    "required": [
+     "paper_id",
+     "title",
+     "raised_by",
+     "claim",
+     "verdict",
+     "evidence"
+    ],
+    "title": "OverlapCheck",
     "type": "object",
     "additionalProperties": false
    }
   },
   "properties": {
    "summary": {
-    "description": "Summary of the reviewers' opinions, with no verdict and no score",
+    "description": "One paragraph combining the reviewers' views: what the biggest risk is, where they agree and where they disagree. No verdict, no score",
     "title": "Summary",
     "type": "string"
    },
-   "consensus": {
-    "description": "Issues raised by two or more reviewers",
+   "key_issues": {
+    "description": "Issues merged and deduplicated (overlap, causes of death and feasibility bottlenecks all count), most fatal first, at most 6; include issues only one reviewer raised",
     "items": {
-     "$ref": "#/$defs/ConsensusIssue"
+     "$ref": "#/$defs/KeyIssue"
     },
-    "title": "Consensus",
+    "title": "Key Issues",
+    "type": "array"
+   },
+   "overlap_check": {
+    "description": "Each overlapping paper the reviewers named, checked one by one; leave empty if none",
+    "items": {
+     "$ref": "#/$defs/OverlapCheck"
+    },
+    "title": "Overlap Check",
     "type": "array"
    },
    "disagreements": {
+    "description": "Places where the reviewers contradict each other; leave empty if none",
     "items": {
      "$ref": "#/$defs/Disagreement"
     },
     "title": "Disagreements",
+    "type": "array"
+   },
+   "first_experiment": {
+    "$ref": "#/$defs/FirstExperiment"
+   },
+   "questions_for_author": {
+    "description": "Questions the author must answer before investing, merged and deduplicated, at most 5",
+    "items": {
+     "type": "string"
+    },
+    "title": "Questions For Author",
     "type": "array"
    },
    "must_verify": {
@@ -951,8 +1097,11 @@
   },
   "required": [
    "summary",
-   "consensus",
+   "key_issues",
+   "overlap_check",
    "disagreements",
+   "first_experiment",
+   "questions_for_author",
    "must_verify"
   ],
   "title": "ChairSummary",

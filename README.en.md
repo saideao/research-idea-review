@@ -13,7 +13,7 @@ Give it a one-sentence research idea, and it will:
 7. **Mine new directions**: dig out a few directions from the gaps that differ in substance from your original idea.
 8. **Write proposals (Model A)**: write one proposal for your original idea and one for each new direction.
 9. **Meta review (Models B, C, D…)**: switch to models from other companies, each in a fresh conversation, given only the proposal and the paper material. They write meta reviews covering overlap, causes of death, feasibility and the cheapest falsification experiment, with no scores and no verdict.
-10. **Summarize**: compile where the reviewers agree and disagree, and list the claims you must verify yourself. The program counts how many reviewers named each overlapping paper, and marks the ones named by only one reviewer as unstable.
+10. **Combined meta review**: the strongest model you have combines the reviewers' opinions into one final meta review: the most serious issues, merged and deduplicated; each overlapping paper the reviewers named, checked one by one; where the reviewers disagree and how to tell who is right; the falsification experiment to run first; and the claims you must verify yourself. The reviewers' names are replaced with the codes A, B before it sees them, so it cannot favour a brand. Separately, the program counts how many reviewers named each overlapping paper, and marks the ones named by only one reviewer as unstable.
 11. **Report**: produce a self-contained HTML report that reads well on phones and computers.
 
 You make the call. The report just lays out the material.
@@ -33,8 +33,15 @@ If you would rather not set up API keys or install a command-line tool, use the 
 How it differs from the command-line version:
 
 - The agent you are already using reads the papers, finds the gaps and writes the proposals, on its own subscription, so there are no API keys to set up.
-- Searching, downloading full texts, format checks, "stop when the evidence is not enough" and calling other companies' models for meta review are done by the skill's scripts, with the same rules as the command-line version. The scripts use only the Python standard library.
+- Searching, downloading full texts, format checks, "stop when the evidence is not enough" and calling other companies' models for the meta reviews and the combined meta review are done by the skill's scripts, with the same rules as the command-line version. The scripts use only the Python standard library.
 - Meta reviews call the other companies' command-line tools installed on your machine (codex, gemini, claude or codebuddy, minus the agent's own company), or an OpenAI-compatible API. If none is available, a subagent reviews instead, and the report says the reviewer is from the same company.
+- With two or more reviews, `ir.py chair` has the strongest model do the combined meta review: `--by claude` uses opus by default (currently Opus 5.5) and `--by gemini` uses pro; thinking effort defaults to xhigh (change it with `--effort`). It runs in a fresh session and does not know who wrote the proposal. To use another model once, pass `--by claude:fable`; to make it the default, set an environment variable:
+
+  ```bash
+  export IDEA_REVIEW_CHAIR=claude:fable
+  ```
+
+  It takes the same `tool:model` form as `--by`, e.g. `codex:gpt-6.1-terra`. Your account must have that model, or this step fails; switch back and run it again.
 - The run directory uses the same file formats as the command-line version, and the report looks the same.
 
 Install it in Claude Code:
@@ -120,6 +127,11 @@ model = "sonnet"          # optional; leave out to use Claude Code's default mod
 [providers.codex_sub]
 type = "codex"            # model is optional; leave out to use Codex's default model
 
+[providers.claude_best]
+type = "claude_code"
+model = "opus"            # the strongest model, for the combined meta review. To switch, change only this line, e.g. "fable"
+effort = "xhigh"
+
 [roles]
 planner = "claude_sub"
 screener = "claude_sub"
@@ -127,7 +139,7 @@ reader = "claude_sub"
 miner = "claude_sub"
 writer = "claude_sub"
 reviewers = ["codex_sub"]
-chair = "codex_sub"
+chair = "claude_best"
 ```
 
 You can also mix them with APIs, e.g. use a subscription for reading and writing and add a reviewer from another company through its API.
@@ -177,7 +189,7 @@ Papers read in full are the most expensive part: each extra paper costs the read
 **Changing the numbers when resuming** (`--resume` with `--refs` / `--candidates`):
 
 - Without these options: the run keeps the numbers it used last time; changes to `config.toml` do not apply.
-- Raising the number read in full: papers already downloaded and read are kept; only the missing ones are downloaded and read. As soon as any new full text is added, steps 6–10 (find gaps, mine new directions, write proposals, meta review, summarize) are redone with the new literature, and you pay for those steps again. The old results and old report are moved to `history/<time>/` in the run directory, not deleted.
+- Raising the number read in full: papers already downloaded and read are kept; only the missing ones are downloaded and read. As soon as any new full text is added, steps 6–10 (find gaps, mine new directions, write proposals, meta review, combined meta review) are redone with the new literature, and you pay for those steps again. The old results and old report are moved to `history/<time>/` in the run directory, not deleted.
 - Raising the number of candidates: more are taken from the full search results saved during the first search (`02_search_results.json`), without searching again; existing candidates keep their IDs. New candidates are only screened. If the number read in full has not been reached yet, new candidates fill it; if it has, the later steps are not redone. To give new candidates a chance to be read, raise `--refs` as well.
 - Lowering a number: nothing is deleted and nothing is redone.
 - `search.per_query` is only used for the first search; changing it when resuming has no effect.
@@ -227,7 +239,7 @@ runs/20261031-1540-Use-LLMs-in-place-of/
 ├── 07_seeds.json        new directions
 ├── 08_proposals.json    proposals
 ├── 09_meta_reviews.json meta reviews
-├── 10_chair.json        summary of the reviews
+├── 10_chair.json        combined meta review
 ├── usage.json           token usage per model
 └── run.log              run log
 ```
@@ -240,7 +252,7 @@ Some highly relevant papers have no open-access PDF; the report lists them separ
 idea-review run --resume runs/some-run
 ```
 
-The program finds PDFs newly put into `papers/` that have not been read yet, extracts the full texts, reads them, and then redoes steps 6–10 (from finding gaps through the summary) with the new literature, moving the old results to `history/`. Papers already read are not read again.
+The program finds PDFs newly put into `papers/` that have not been read yet, extracts the full texts, reads them, and then redoes steps 6–10 (from finding gaps through the combined meta review) with the new literature, moving the old results to `history/`. Papers already read are not read again.
 
 - The same works for papers in the report's "other candidates" list: put them in by ID and they will be read, whatever tier screening gave them.
 - Papers you add yourself count toward the number read in full, and the report notes how many of them you added.
@@ -261,7 +273,7 @@ The English prompts for each step are in `src/idea_review/prompts/en/`, one file
 | `seeds.md` | Mine new directions |
 | `write_proposal.md` | Write proposals (Model A) |
 | `meta_review.md` | Meta review (Models B, C, D…) |
-| `chair.md` | Summarize agreement and disagreement |
+| `chair.md` | Combined meta review |
 
 Text the program itself splices into the prompts (paper information, note digests, JSON format instructions, etc.) is in `src/idea_review/texts.py`, and the field descriptions sent to the models are in `src/idea_review/schemas.py`. Both come in a Chinese and an English version; if you change one, change the other too.
 
@@ -291,6 +303,9 @@ The tests do not use the network: they run the whole pipeline with fake search r
 
 ### 2026-11-02
 
+- New combined meta review: once several reviewers are done, the strongest model combines their opinions into one final meta review, shown first in each proposal's review section. It merges and deduplicates the most serious issues and marks the ones every reviewer raised; checks each overlapping paper the reviewers named against the reading notes and full-text excerpts, marking it confirmed, partial, not supported or cannot be checked; lists where the reviewers disagree and how to tell who is right; and picks the falsification experiment to run first out of the reviewers' designs. The reviews it gets carry only the codes A, B; the report maps them back to names. It replaces the old "summary of the reviews", which listed only agreement and disagreement.
+  - Skill version: `ir.py chair RUN --by claude` (opus by default; `--by gemini` uses pro; thinking effort xhigh by default; to default to another model, set an environment variable such as `IDEA_REVIEW_CHAIR=claude:fable`). The agent used to write the summary itself; now the strongest model does it in a fresh session. Skip it if you do not want to spend more, or hand it to a subagent with `--dump`. Summaries in old run directories still show up.
+  - Command-line version: set `chair` under `[roles]` to the strongest model you have; the example config uses `claude-opus-5-5` with `effort = "xhigh"`; to switch, change only the `model` line under `[providers.strongest]`. Old-format summaries cannot be read; continuing a run (`--resume`) redoes this step.
 - WorkBuddy support. Copy the skill into `~/.workbuddy/skills/` and the models in WorkBuddy (Hunyuan hy3, for example) can run the whole pipeline. After the review, the report can be published as a web app with a share link. What gets published is a separate copy written by `report.py RUN --site`, with no local paths or paper PDFs, marked so search engines do not index it.
 
   Example: start a new task in WorkBuddy, pick a workspace and a model, and paste the text below. It is a low-cost trial run: 12 candidates, 3 papers read in full, 1 proposal, and a single meta review from codex's small model. For real use, drop the count options, and you can ask more reviewers.

@@ -12,7 +12,7 @@
 7. 新方向
 8. proposal
 9. 元评审（含"没有别家模型时"）
-10. 汇总评审意见
+10. 综合元评审（含"不调用模型时"）
 
 ## 1. 拆检索词 → 01_plan.json
 
@@ -115,11 +115,26 @@ export IDEA_REVIEW_API_MODEL=模型名
 2. 每份 proposal 开一个新的子代理，只给它这个文件，让它按文件里的要求输出 MetaReview 格式的 JSON。不要把你写 proposal 的过程告诉它。
 3. 把结果按 formats.md 第 9 节追加进 `09_meta_reviews.json`，`reviewer` 写 `subagent`，`family` 写你自己的公司。
 
-## 10. 汇总评审意见 → 10_chair.json
+## 10. 综合元评审 → 10_chair.json
 
-你在整理几位评审对同一份 proposal 的意见，帮作者看清楚哪里一致、哪里有分歧，不是替作者做决定。
+`ir.py chair RUN --by <最强的一家>` 把每份 proposal 的几位评审意见（至少两份成功的）综合成最终的元评审，要求在 `assets/chair.zh.md`（英文运行用 `chair.en.md`）：
 
-- 两位及以上评审都提到的问题放进 `consensus`，写清是谁提的（用 `09_meta_reviews.json` 里的 reviewer 名字）。几家都提到的，基本就是真问题。
-- 只有一位提到、或者说法相反的，放进 `disagreements`，写清各自的看法。
-- `must_verify` 列出作者必须亲自点开论文核实的说法，尤其是"某篇论文已经做过"这类判断。
-- 不下结论、不打分，不说"建议做"或"建议放弃"。
+- 合并去重最要紧的问题，按致命程度排，写清哪几位评审提过；评审都没提、材料里明摆着的问题，综合的模型可以补一两条。
+- 对照精读笔记和全文节选，逐篇核对评审说的撞车论文，标成证实、部分重合、不支持或核对不了。
+- 列出评审之间的分歧，和查什么、做什么能判断谁对。
+- 从各家的证伪实验里挑出或合成最该先做的一个，合并作者必须回答的问题和必须亲自核实的说法。
+- 不打分，不说"建议做"或"建议放弃"。
+
+挑模型：用本机能用的最强的模型，`ir.py reviewers` 会列出每家默认用哪个型号（claude 用 opus，现在是 Opus 5.5；gemini 用 pro；codex 用它自带的默认型号；codebuddy 用 hy3）。用户想用别的型号，一次性的用 `--by 工具:型号` 指定，比如 `--by claude:fable`；想以后都用它，让用户设环境变量 `IDEA_REVIEW_CHAIR=claude:fable`，写法和 `--by` 一样，设了以后不写 `--by` 就用它。拿不准哪个最强就问用户。型号用户的账号用不了时这一步会报错，换一个再跑。`--effort` 设思考强度，默认 xhigh，gemini 和 api 没有这个参数。
+
+交给它的评审意见里，评审名字换成了代号 A、B……（按评审名字排序），免得它看牌子偏信哪一家；`10_chair.json` 的 `reviewers` 记着代号对应谁，报告里会换回名字。失败的再运行一次 chair 会重做；已经做完的想换个模型重做，加 `--again`，重做失败时保留原来的结果。
+
+### 不调用模型时
+
+用户不想再花钱，或者本机没有能调用的模型：
+
+1. 运行 `ir.py chair RUN --dump`，它把每份 proposal 的材料写到 `RUN/chair_prompts/I1.md` 等文件，代号对应谁写在 `RUN/chair_prompts/codes.json`。
+2. 每份 proposal 开一个新的子代理，只给它这个文件，让它按文件里的要求输出 ChairSummary 格式的 JSON。不要把评审是哪家、proposal 是谁写的告诉它。
+3. 按 formats.md 第 10 节写进 `10_chair.json`：`chair` 写 `subagent`，`reviewers` 照抄 codes.json 里对应的那份。
+
+也可以直接跳过这一步出报告，报告里就没有综合元评审这一块。

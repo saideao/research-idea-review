@@ -73,7 +73,14 @@ T = {
         "differs": "和原始 idea 的区别：", "based_on": "依据的空白：", "why_fail": "现有方法为什么不行", "closest": "最接近的工作",
         "overlap": "重合 ", "difference": "区别 ", "min_exp": "最小实验（{d}）", "data": "数据：", "baselines": "基线：",
         "metrics": "指标：", "kill_sign": "不成立的信号", "risks": "风险", "checking": "需要补查", "ask_author": "需要你自己回答",
-        "meta_reviews": "元评审", "chair": "评审意见汇总", "chair_by": "（由 {writer} 整理，不下结论）",
+        "meta_reviews": "元评审", "chair": "综合元评审", "chair_by": "由 {chair} 综合 {n} 位评审的意见（{legend}），不下结论",
+        "chair_legacy": "评审意见汇总", "chair_legacy_by": "（由 {writer} 整理，不下结论）",
+        "chair_same": "和写 proposal 的是同一家模型", "key_issues": "要紧的问题", "all_raised": "{k} 家都提到",
+        "ac": "综合时补充", "overlap_check": "撞车论文核对", "claim": "评审说：", "checked": "核对：",
+        "verdicts": {"confirmed": ("材料证实撞车", "b-warn"), "partial": ("部分重合", "b-medium"),
+                     "not_supported": ("材料不支持这个说法", "b-high"), "unverifiable": ("核对不了", "b-unk")},
+        "settle": "怎么判断谁对：", "first_exp": "最该先做的实验", "drawn_from": "取自：", "days": "用时：",
+        "chair_questions": "投入之前要回答的问题",
         "consensus": "几家都提到的问题", "disagree": "有分歧的地方", "verify": "你必须亲自核实",
         "tally": "评审列出的撞车论文", "tally_by": "程序按 {n} 家评审的意见统计", "tally_row": "{n} 家里 {k} 家",
         "tally_external": "附上的论文以外，需核实", "tally_single": "只有一家这么说，不稳",
@@ -90,7 +97,7 @@ T = {
                       "证伪实验开始之前，\"出现什么结果就放弃\"我写下来了吗？", "三天内跑完了吗？结果是什么？"],
         "decide_note": "跑实验的时候自己盯着看：下一个好问题，往往就藏在那些看不懂的现象里。",
         "appendix": "附录", "who": "各环节由谁完成", "th_who": ["环节", "模型"],
-        "who_rows": ["拆检索词、初筛、精读、找空白、写 proposal、汇总评审意见", "元评审"],
+        "who_rows": ["拆检索词、初筛、精读、找空白、写 proposal", "元评审", "综合元评审"],
         "usage": "评审用量", "th_usage": ["评审", "调用次数", "输入 token", "输出 token"],
         "run_dir": "运行目录：<code>{run}</code>。每一步的原始结果都是 JSON，放在这个目录里。",
         "footer": "这份报告只是帮你发现盲点。AI 给出的任何论文和判断，都要自己点开核实；拍板的是你。",
@@ -155,8 +162,16 @@ T = {
         "differs": "How it differs from the original idea: ", "based_on": "Based on gaps: ", "why_fail": "Why existing methods fall short",
         "closest": "Closest work", "overlap": "overlap ", "difference": "difference ", "min_exp": "Minimal experiment ({d})",
         "data": "Data: ", "baselines": "baselines: ", "metrics": "metrics: ", "kill_sign": "Sign it fails", "risks": "Risks",
-        "checking": "Needs checking", "ask_author": "For you to answer", "meta_reviews": "Meta reviews", "chair": "Summary of the reviews",
-        "chair_by": " (compiled by {writer}, no verdict)", "consensus": "Raised by several reviewers", "disagree": "Disagreements",
+        "checking": "Needs checking", "ask_author": "For you to answer", "meta_reviews": "Meta reviews", "chair": "Combined meta review",
+        "chair_by": "{chair} combined the opinions of {n} reviewers ({legend}); no verdict",
+        "chair_legacy": "Summary of the reviews", "chair_legacy_by": " (compiled by {writer}, no verdict)",
+        "chair_same": "Same company as the proposal writer", "key_issues": "Key issues", "all_raised": "raised by all {k}",
+        "ac": "added by the chair", "overlap_check": "Overlap claims checked", "claim": "Reviewers say: ", "checked": "Check: ",
+        "verdicts": {"confirmed": ("Overlap confirmed by the material", "b-warn"), "partial": ("Partial overlap", "b-medium"),
+                     "not_supported": ("Not supported by the material", "b-high"), "unverifiable": ("Cannot be checked", "b-unk")},
+        "settle": "How to tell who is right: ", "first_exp": "Experiment to run first", "drawn_from": "Taken from: ", "days": "Duration: ",
+        "chair_questions": "Questions to answer before investing",
+        "consensus": "Raised by several reviewers", "disagree": "Disagreements",
         "verify": "You must check yourself", "same_family": "Same company as the proposal writer; discount accordingly",
         "tally": "Overlapping papers named by the reviewers", "tally_by": "counted by the program across {n} reviewer{s}",
         "tally_row": "{k} of {n}", "tally_external": "Not among the attached papers; check it",
@@ -177,7 +192,7 @@ T = {
                       "Did it finish within three days? What was the result?"],
         "decide_note": "Watch the experiments yourself: the next good question often hides in what you cannot explain.",
         "appendix": "Appendix", "who": "Who did each step", "th_who": ["Step", "Model"],
-        "who_rows": ["Queries, screening, reading, gaps, proposals, review summary", "Meta review"],
+        "who_rows": ["Queries, screening, reading, gaps, proposals", "Meta review", "Combined meta review"],
         "usage": "Reviewer usage", "th_usage": ["Reviewer", "Calls", "Input tokens", "Output tokens"],
         "run_dir": "Run directory: <code>{run}</code>. The raw result of every step is a JSON file in this directory.",
         "footer": "This report only helps you find blind spots. Open and check every paper and judgment the AI gives you; the call is yours.",
@@ -197,6 +212,21 @@ def refs(text) -> str:
     s = _REF.sub(r'<a class="ref" href="#paper-\1">\1</a>', s)
     s = _GAP.sub(r'<a class="ref gap" href="#gap-\1">\1</a>', s)
     return _PAGE.sub(r'<span class="page">\1</span>', s)
+
+
+def chair_names(names: list[str], codes: dict[str, str], t: dict) -> list[str]:
+    """综合元评审里写的是评审代号，换回评审名字。AC 是综合的模型自己补的。"""
+    out = []
+    for name in names:
+        m = re.fullmatch(r"\s*(?:评审|Reviewer)?\s*([A-Z]{1,2})\s*", name)
+        code = m.group(1) if m else name
+        out.append(t["ac"] if code == "AC" else codes.get(code, name))
+    return out
+
+
+def chair_detail(c: dict) -> str:
+    """综合元评审用的型号和思考强度，比如 opus · xhigh。"""
+    return " · ".join(c[k] for k in ("model", "effort") if c.get(k))
 
 
 def overlap_tally(metas: list[dict], by_id: dict[str, dict]) -> tuple[int, list[dict]]:
@@ -255,6 +285,60 @@ def build(run: Run, site: bool = False) -> Path:
             return f'<span class="meta">{t["none"]}</span>'
         return '<ul class="tight">' + "".join(f"<li>{refs(i)}</li>" for i in items) + "</ul>"
 
+    def chair_html(c: dict) -> str:
+        s, codes = c["summary"], c.get("reviewers") or {}
+        legend = t["sep"].join(f"{k} = {v}" for k, v in codes.items())
+        same = c.get("family") and c.get("family") == writer.get("family")
+        out = (f'<div class="chair"><b>{t["chair"]}</b> <span class="meta">'
+               + t["chair_by"].format(chair=esc(c.get("chair", "")) + (f'{t["lp"]}{esc(chair_detail(c))}{t["rp"]}' if chair_detail(c) else ""),
+                                      n=len(codes), legend=esc(legend)) + "</span>"
+               + (f' <span class="badge b-warn">{t["chair_same"]}</span>' if same else "") + f'<p>{refs(s["summary"])}</p>')
+        if s["key_issues"]:
+            items = ""
+            for i in s["key_issues"]:
+                names = chair_names(i["raised_by"], codes, t)
+                k = len(set(names) & set(codes.values()))
+                items += (f'<li>{refs(i["issue"])}' + (f' <span class="badge b-warn">{t["all_raised"].format(k=k)}</span>' if len(codes) > 1 and k == len(codes) else "")
+                          + f' <span class="meta">{t["lp"]}{esc(t["sep"].join(names))}{t["semi"]}'
+                          f'{t["from_paper"] if i["source"] == "paper" else t["from_inference"]}{t["colon"]}{refs(i["basis"])}{t["rp"]}</span></li>')
+            out += f'<h4>{t["key_issues"]}</h4><ol class="tight">{items}</ol>'
+        if s["overlap_check"]:
+            items = ""
+            for o in s["overlap_check"]:
+                label, cls = t["verdicts"].get(o["verdict"], (o["verdict"], "b-unk"))
+                items += (f'<li>{refs(o["paper_id"]) + " " if o["paper_id"] != "external" else ""}{esc(o["title"])} <span class="badge {cls}">{esc(label)}</span>'
+                          f' <span class="meta">{t["lp"]}{esc(t["sep"].join(chair_names(o["raised_by"], codes, t)))}{t["rp"]}</span><br>'
+                          f'{t["claim"]}{refs(o["claim"])}<br><span class="meta">{t["checked"]}{refs(o["evidence"])}</span></li>')
+            out += f'<h4>{t["overlap_check"]}</h4><ul class="tight">{items}</ul>'
+        if s["disagreements"]:
+            out += f'<h4>{t["disagree"]}</h4><ul class="tight">' + "".join(
+                f'<li><b>{esc(d["topic"])}</b>{t["colon"]}{refs(t["semi"].join(d["positions"]))}<br>'
+                f'<span class="meta">{t["settle"]}{refs(d["how_to_settle"])}</span></li>' for d in s["disagreements"]) + "</ul>"
+        f = s["first_experiment"]
+        out += (f'<h4>{t["first_exp"]}</h4><p style="margin:4px 0">{refs(f["experiment"])}<br>'
+                f'<span class="meta">{t["compare"]}{esc(f["compare_against"])}{t["semi"]}{t["metric"]}{esc(f["metric"])}{t["semi"]}'
+                f'{t["days"]}{esc(f["est_days"])}{t["semi"]}{t["drawn_from"]}{esc(t["sep"].join(chair_names(f["drawn_from"], codes, t)))}</span><br>'
+                f'<span class="kill">{t["give_up"]}{refs(f["kill_if"])}</span><br><span class="go">{t["go_on"]}{refs(f["continue_if"])}</span></p>')
+        if s["questions_for_author"]:
+            out += f'<h4>{t["chair_questions"]}</h4>{plist(s["questions_for_author"])}'
+        if s["must_verify"]:
+            out += f'<h4>{t["verify"]}</h4>{plist(s["must_verify"])}'
+        return out + "</div>\n"
+
+    def legacy_chair_html(s: dict) -> str:
+        """旧版本由写 proposal 的 agent 写的汇总。"""
+        return (f'<div class="chair"><b>{t["chair_legacy"]}</b>{t["chair_legacy_by"].format(writer=esc(writer_name))}<p>{refs(s["summary"])}</p>'
+                + (f'<h4>{t["consensus"]}</h4><ul class="tight">' + "".join(
+                    f'<li>{refs(c["issue"])} <span class="meta">{t["lp"]}{esc(t["sep"].join(c["raised_by"]))}{t["rp"]}</span></li>' for c in s["consensus"]) + "</ul>"
+                   if s.get("consensus") else "")
+                + (f'<h4>{t["disagree"]}</h4><ul class="tight">' + "".join(
+                    f'<li><b>{esc(d["topic"])}</b>{t["colon"]}{refs(t["semi"].join(d["positions"]))}</li>' for d in s["disagreements"]) + "</ul>"
+                   if s.get("disagreements") else "")
+                + (f'<h4>{t["verify"]}</h4>{plist(s["must_verify"])}' if s.get("must_verify") else "") + "</div>\n")
+
+    def usage_name(name: str) -> str:
+        return f'{esc(name[6:])}{t["lp"]}{t["chair"]}{t["rp"]}' if name.startswith("chair:") else esc(name)
+
     def kind_label(q):
         return kinds_t.get(q.get("paper_type", "other"), "") if q.get("paper_type", "other") != "other" else ""
 
@@ -279,6 +363,8 @@ def build(run: Run, site: bool = False) -> Path:
     n_mismatch = sum(1 for _, r in read if r["review"]["abstract_vs_body"]["overclaims"])
     n_props = sum(1 for r in proposals if r.get("proposal"))
     reviewer_rows = list({(m["reviewer"], m.get("model") or "", m.get("family") or ""): None for m in metas})
+    chair_labels = t["sep"].join(dict.fromkeys(f"<b>{esc(c['chair'])}</b>" + (f' <span class="meta">{esc(chair_detail(c))}</span>' if chair_detail(c) else "")
+                                               for c in chairs.values() if c.get("summary") and c.get("chair")))
     gaps = (landscape or {}).get("gaps", [])
 
     shortfall = gate(list(reviews.values()), meta)
@@ -482,6 +568,9 @@ def build(run: Run, site: bool = False) -> Path:
           + f'<h3>{t["meta_reviews"]}</h3>\n')
         mine = [m for m in metas if m["proposal_id"] == pid]
         n, rows = overlap_tally(mine, by_id)
+        chair = chairs.get(pid) or {}
+        if chair.get("summary"):
+            w(chair_html(chair) if "consensus" not in chair["summary"] else legacy_chair_html(chair["summary"]))
         if n:
             items = "".join(
                 f'<li>{refs(r["paper_id"]) + " " if r["paper_id"] else ""}{esc(r["title"])}{t["colon"]}'
@@ -493,16 +582,6 @@ def build(run: Run, site: bool = False) -> Path:
                     else f'<p class="meta">{t["tally_none"]}</p>')
             w(f'<div class="callout"><b>{t["tally"]}</b> <span class="meta">{t["lp"]}{t["tally_by"].format(n=n, s="s" if n > 1 else "")}'
               f'{t["rp"]}</span>{body}</div>\n')
-        summary = (chairs.get(pid) or {}).get("summary")
-        if summary:
-            w(f'<div class="chair"><b>{t["chair"]}</b>{t["chair_by"].format(writer=esc(writer_name))}<p>{refs(summary["summary"])}</p>'
-              + (f'<h4>{t["consensus"]}</h4><ul class="tight">' + "".join(
-                  f'<li>{refs(c["issue"])} <span class="meta">{t["lp"]}{esc(t["sep"].join(c["raised_by"]))}{t["rp"]}</span></li>' for c in summary["consensus"]) + "</ul>"
-                 if summary["consensus"] else "")
-              + (f'<h4>{t["disagree"]}</h4><ul class="tight">' + "".join(
-                  f'<li><b>{esc(d["topic"])}</b>{t["colon"]}{refs(t["semi"].join(d["positions"]))}</li>' for d in summary["disagreements"]) + "</ul>"
-                 if summary["disagreements"] else "")
-              + (f'<h4>{t["verify"]}</h4>{plist(summary["must_verify"])}' if summary["must_verify"] else "") + "</div>\n")
         w('<div class="reviewers">')
         for m in mine:
             same = m.get("family") and m.get("family") == writer.get("family")
@@ -546,11 +625,12 @@ def build(run: Run, site: bool = False) -> Path:
     w(f'<section id="appendix"><h2>{t["appendix"]}</h2><h3>{t["who"]}</h3><div class="table-wrap"><table><thead><tr>'
       + "".join(f"<th>{h}</th>" for h in t["th_who"]) + "</tr></thead><tbody>"
       f'<tr><td>{t["who_rows"][0]}</td><td>{esc(writer_name)}</td></tr>'
-      f'<tr><td>{t["who_rows"][1]}</td><td>{rv_names or t["no_reviewers"]}</td></tr></tbody></table></div>\n')
+      f'<tr><td>{t["who_rows"][1]}</td><td>{rv_names or t["no_reviewers"]}</td></tr>'
+      + (f'<tr><td>{t["who_rows"][2]}</td><td>{chair_labels}</td></tr>' if chair_labels else "") + "</tbody></table></div>\n")
     if usage:
         w(f'<h3>{t["usage"]}</h3><div class="table-wrap"><table><thead><tr>' + "".join(
             f'<th{" class=num" if i else ""}>{h}</th>' for i, h in enumerate(t["th_usage"])) + "</tr></thead><tbody>"
-          + "".join(f'<tr><td>{esc(n)} <span class="meta">{esc(u.get("model"))}</span></td><td class="num">{u.get("calls", 0)}</td>'
+          + "".join(f'<tr><td>{usage_name(n)} <span class="meta">{esc(u.get("model"))}</span></td><td class="num">{u.get("calls", 0)}</td>'
                     f'<td class="num">{u.get("input_tokens", 0):,}</td><td class="num">{u.get("output_tokens", 0):,}</td></tr>' for n, u in usage.items())
           + "</tbody></table></div>\n")
     w(f'<p class="meta">{t["run_dir"].format(run=run_dir)}</p></section>\n</main>\n'

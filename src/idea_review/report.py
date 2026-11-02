@@ -10,7 +10,7 @@ from markupsafe import Markup, escape
 
 from . import prompts
 from .config import Config
-from .pipeline import RunStore, evidence_need, evidence_shortfall
+from .pipeline import RunStore, evidence_need, evidence_shortfall, load_chairs
 from .schemas import (
     ChairRecord, FullText, IdeaSeeds, Landscape, MetaReviewRecord, Paper, ProposalRecord, QueryPlan,
     ReviewRecord, ScreenItem,
@@ -59,6 +59,35 @@ COUNT_NOTES = {
 TEMPLATES = {"zh": "report.html.j2", "en": "report.en.html.j2"}
 
 
+CHAIR_AC = {"zh": "综合时补充", "en": "added by the chair"}
+
+
+def chair_view(c: ChairRecord | None, lang: str) -> dict | None:
+    """综合元评审里写的是评审代号，换回评审名字。AC 是综合的模型自己补的。"""
+    if not c or not c.summary:
+        return None
+    codes = c.reviewers
+
+    def names(items: list[str]) -> list[str]:
+        out = []
+        for item in items:
+            m = re.fullmatch(r"\s*(?:评审|Reviewer)?\s*([A-Z]{1,2})\s*", item)
+            code = m.group(1) if m else item
+            out.append(CHAIR_AC[lang] if code == "AC" else codes.get(code, item))
+        return out
+
+    s = c.summary.model_dump()
+    for i in s["key_issues"]:
+        i["raised_by"] = names(i["raised_by"])
+        i["everyone"] = len(codes) > 1 and set(i["raised_by"]) >= set(codes.values())
+    for o in s["overlap_check"]:
+        o["raised_by"] = names(o["raised_by"])
+    s["first_experiment"]["drawn_from"] = names(s["first_experiment"]["drawn_from"])
+    sep = "、" if lang == "zh" else ", "
+    return {"s": s, "chair": c.chair, "detail": " · ".join(x for x in (c.model, c.effort) if x), "family": c.family,
+            "n": len(codes), "legend": sep.join(f"{k} = {v}" for k, v in codes.items())}
+
+
 def overlap_tally(metas: list[MetaReviewRecord], by_id: dict[str, Paper]) -> dict:
     """数几家评审各自把哪些论文列为撞车。由程序统计，不靠模型归纳：只有一家这么说的，报告里标成不稳。"""
     done = [m for m in metas if m.review]
@@ -88,7 +117,7 @@ def build_report(run_dir: Path, cfg: Config) -> Path:
     seeds = store.load("07_seeds", IdeaSeeds)
     proposals = store.load("08_proposals", list[ProposalRecord]) or []
     metas = store.load("09_meta_reviews", list[MetaReviewRecord]) or []
-    chairs = {c.proposal_id: c for c in (store.load("10_chair", list[ChairRecord]) or [])}
+    chairs = {c.proposal_id: c for c in load_chairs(store)}
     usage = json.loads(store.path("usage").read_text(encoding="utf-8")) if store.has("usage") else {}
     # 报告用这次运行的语言版本；老的运行目录 meta.json 里没有，就用当前配置
     lang = meta.get("lang", cfg.review.lang)
@@ -115,7 +144,7 @@ def build_report(run_dir: Path, cfg: Config) -> Path:
             "rec": rec,
             "metas": mine,
             "tally": overlap_tally(mine, by_id),
-            "chair": chairs.get(rec.proposal_id),
+            "chair": chair_view(chairs.get(rec.proposal_id), lang),
         })
 
     # 这次运行设定的数量；老的运行目录 meta.json 里没有，就用当前配置

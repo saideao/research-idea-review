@@ -30,6 +30,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +48,8 @@ EXPAND_FACTOR, MAX_POOL = 3, 300
 MIN_GAPS, MAX_GAPS = 3, 8
 # 发给评审模型的全文节选：最多几篇、每篇多少字符
 REVIEW_EXCERPT_PAPERS, REVIEW_EXCERPT_CHARS = 3, 15000
+# 综合元评审要核对评审说的撞车论文，节选多给一篇
+CHAIR_EXCERPT_PAPERS = 4
 # 超过这个字符数的全文，提醒 agent 分段读（命令行版精读时也是截到这么长）
 LONG_TEXT = 60000
 MAX_PDF_BYTES = 40 * 1024 * 1024
@@ -68,6 +71,12 @@ REVIEWERS = {
                   "env": {"CODEBUDDY_DISABLE_AUTO_MEMORY": "1"}},
 }
 API_ENV = ("IDEA_REVIEW_API_BASE", "IDEA_REVIEW_API_KEY", "IDEA_REVIEW_API_MODEL")
+# 综合元评审要用最强的模型：没写型号时 claude 用 opus、gemini 用 pro（都是"最新的这一档"的简写，opus 现在是 Opus 5.5），
+# codex 用它自带的默认型号，codebuddy 用 hy3。思考强度默认 xhigh，gemini 和 api 没有这个参数
+CHAIR_MODELS = {"claude": "opus", "gemini": "pro"}
+CHAIR_EFFORT = "xhigh"
+# 想换默认用的模型，设这个环境变量就行，写法和 --by 一样，比如 export IDEA_REVIEW_CHAIR=claude:fable
+CHAIR_ENV = "IDEA_REVIEW_CHAIR"
 
 
 class Stop(Exception):
@@ -137,6 +146,8 @@ TX = {
         "omitted": "\n\n[……中间省略……]\n\n",
         "json_instruction": "只输出一个 JSON 对象，不要输出其他文字。JSON 必须符合下面的 JSON Schema（{name}）：",
         "retry": "上一次的输出没有通过格式校验：{error}\n请重新输出完整的 JSON，只输出 JSON。",
+        "chair_reviewer": "## 评审 {code}",
+        "no_chair_excerpts": "（评审列出的撞车论文和 proposal 引用的论文都没有可用的全文）",
     },
     "en": {
         "published": {True: "peer-reviewed", False: "preprint", None: "publication status unknown"},
@@ -160,6 +171,8 @@ TX = {
         "omitted": "\n\n[... middle omitted ...]\n\n",
         "json_instruction": "Output a single JSON object and nothing else. The JSON must follow this JSON Schema ({name}):",
         "retry": "The previous output failed validation: {error}\nOutput the complete JSON again, and only the JSON.",
+        "chair_reviewer": "## Reviewer {code}",
+        "no_chair_excerpts": "(none of the papers named by the reviewers or cited by the proposal has a usable full text)",
     },
 }
 
@@ -982,14 +995,30 @@ def cmd_next(args) -> None:
         print(f"有 {len(failed)} 份评审失败了（{'、'.join(sorted({m['reviewer'] for m in failed}))}）。可以再运行一次 review 重试，不重试也能出报告。")
 
     chairs = {c["proposal_id"]: c for c in run.load("10_chair", [])}
-    need_chair = [pid for pid in expected
-                  if sum(1 for m in metas if m["proposal_id"] == pid and m.get("review")) >= 2
-                  and not (chairs.get(pid) or {}).get("summary")]
+    n_ok = {pid: sum(1 for m in metas if m["proposal_id"] == pid and m.get("review")) for pid in expected}
     for pid, c in chairs.items():
-        if c.get("summary") and (errs := check(c["summary"], "ChairSummary")):
+        # 旧版本由 agent 写的汇总（有 consensus 字段）照旧显示，不再检查
+        if c.get("summary") and "consensus" not in c["summary"] and (errs := check(c["summary"], "ChairSummary")):
             return report_errors(f"10_chair.json 里 {pid} 的 summary", errs)
+    need_chair = [pid for pid in expected if n_ok[pid] >= 2 and not (chairs.get(pid) or {}).get("summary")]
     if need_chair:
-        return step(f"汇总 {'、'.join(need_chair)} 的评审意见，写进 {run.path('10_chair')}（见 references/steps.md 第 10 节）。")
+        failed = [pid for pid in need_chair if (chairs.get(pid) or {}).get("error")]
+        if failed:
+            print(f"{'、'.join(failed)} 的综合元评审失败了：{chairs[failed[0]]['error'][:200]}")
+        choices = chair_choices()
+        by = default_chair(choices)
+        if not by:
+            return step(f"把几位评审的意见综合成最终的元评审：本机没有能调用的模型，运行 ir.py chair {run.dir} --dump，"
+                        "按 references/steps.md 第 10 节交给子代理。")
+        options = "、".join(f"{name}（{model or '自带的默认型号'}）" for name, model in choices)
+        set_by = f"（用的是环境变量 {CHAIR_ENV}）" if os.environ.get(CHAIR_ENV, "").strip() else ""
+        return step(f"用最强的模型把 {'、'.join(need_chair)} 的几位评审意见综合成最终的元评审：ir.py chair {run.dir} --by {by}{set_by}\n"
+                    f"  本机能用的：{options}。挑最强的一家；要指定型号就写成 --by claude:fable 这样，"
+                    f"想以后都用它就设环境变量 {CHAIR_ENV}=claude:fable。思考强度默认 xhigh。"
+                    "先告诉用户要调用哪个，这会用掉订阅额度或 API 费用。每份可能要十几分钟，放到后台跑。"
+                    "用户不想再花钱的话，跳过这一步直接出报告。")
+    if single := [pid for pid in expected if n_ok[pid] == 1]:
+        print(f"{'、'.join(single)} 只有一份成功的评审，没法做综合元评审。想要的话，用 review 再请一家别的评审，再运行 next。")
     step(f"运行 report.py {run.dir} 出报告，把报告路径和要点告诉用户。")
 
 
@@ -1026,11 +1055,12 @@ def extract_json(text: str) -> dict:
 
 
 class Reviewer:
-    def __init__(self, spec: str, timeout: int):
+    def __init__(self, spec: str, timeout: int, effort: str | None = None, chair: bool = False):
         name, _, model = spec.partition(":")
+        model = model or (CHAIR_MODELS.get(name, "") if chair else "")
         if name not in REVIEWERS and name != "api":
             raise Stop(f"不认识的评审 {name}，可选 {' / '.join([*REVIEWERS, 'api'])}")
-        self.name, self.timeout = name, timeout
+        self.name, self.timeout, self.effort = name, timeout, effort
         if name == "api":
             missing = [k for k in API_ENV[:2] if not os.environ.get(k)]
             if missing:
@@ -1058,17 +1088,21 @@ class Reviewer:
         self.usage["input_tokens"] += inp or 0
         self.usage["output_tokens"] += out or 0
 
-    def complete(self, system: str, user: str, schema: dict, lang: str) -> str:
+    def complete(self, system: str, user: str, schema: dict, lang: str, name: str = "MetaReview") -> str:
         with self.lock, tempfile.TemporaryDirectory(prefix="idea-review-") as tmp:
             work = Path(tmp)
+            json_prompt = (f"\n\n---\n{TX[lang]['json_instruction'].format(name=name)}\n"
+                           f"{json.dumps(schema, ensure_ascii=False)}")
             if self.name == "api":
-                return self._api(system, user, schema, lang)
+                return self._api(system, user + json_prompt)
             if self.name == "claude":
                 args = ["claude", "-p", "--output-format", "json", "--system-prompt", system,
                         "--json-schema", json.dumps(schema, ensure_ascii=False),
                         "--tools", "", "--setting-sources", "", "--no-session-persistence"]
                 if self.model:
                     args += ["--model", self.model]
+                if self.effort:
+                    args += ["--effort", self.effort]
                 return self._parse_claude(*self._run(args, user, work))
             if self.name == "codex":
                 schema_path, answer = work / "schema.json", work / "answer.txt"
@@ -1078,14 +1112,16 @@ class Reviewer:
                         "--sandbox", "read-only", "-C", str(work), "--output-schema", str(schema_path), "-o", str(answer), "--json"]
                 if self.model:
                     args += ["-m", self.model]
+                if self.effort:
+                    args += ["-c", f'model_reasoning_effort="{self.effort}"']
                 return self._parse_codex(*self._run(args + ["-"], f"{system}\n\n{user}", work), answer)
-            json_prompt = (f"\n\n---\n{TX[lang]['json_instruction'].format(name='MetaReview')}\n"
-                           f"{json.dumps(schema, ensure_ascii=False)}")
             if self.name == "codebuddy":
                 # 不用 --json-schema：它要模型调一个工具交结果，混元会把嵌套的对象写成字符串，校验不过就反复重试。
                 # 所以和 gemini 一样把格式写进提示词，关掉所有工具，从回答里取 JSON。也不读用户设置、不留会话记录
                 args = ["codebuddy", "-p", "--output-format", "json", "--system-prompt", system, "--tools", "",
                         "--setting-sources", "", "--no-session-persistence", "--model", self.model]
+                if self.effort:
+                    args += ["--effort", self.effort]
                 try:
                     return self._parse_codebuddy(*self._run(args, user + json_prompt, work))
                 finally:
@@ -1176,13 +1212,9 @@ class Reviewer:
             raise RuntimeError(f"报错：{str(data['error'].get('message') or data['error'])[:400]}")
         return data.get("response") or ""
 
-    def _api(self, system: str, user: str, schema: dict, lang: str) -> str:
+    def _api(self, system: str, user: str) -> str:
         base = os.environ["IDEA_REVIEW_API_BASE"].rstrip("/")
-        body = {"model": self.model, "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": f"{user}\n\n---\n{TX[lang]['json_instruction'].format(name='MetaReview')}\n"
-                                        f"{json.dumps(schema, ensure_ascii=False)}"},
-        ]}
+        body = {"model": self.model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
         req = Request(f"{base}/chat/completions", data=json.dumps(body).encode("utf-8"), method="POST", headers={
             "Content-Type": "application/json", "Authorization": f"Bearer {os.environ['IDEA_REVIEW_API_KEY']}", "User-Agent": USER_AGENT})
         try:
@@ -1217,7 +1249,6 @@ def cmd_review(args) -> None:
     if not proposals:
         raise Stop("还没有写好的 proposal（08_proposals.json）。先运行 next 看进度。")
     system_raw, user_raw = (SKILL_DIR / "assets" / f"meta_review.{lang}.md").read_text(encoding="utf-8").split("---USER---", 1)
-    schema = schemas(lang)["MetaReview"]
     digests, texts, by_id = review_material(run, meta)
 
     def excerpts(prop: dict) -> str:
@@ -1238,8 +1269,7 @@ def cmd_review(args) -> None:
         for rec in proposals:
             system, user = prompt(rec)
             path = out / f"{rec['proposal_id']}.md"
-            path.write_text(f"{system}\n\n{user}\n\n---\n{t['json_instruction'].format(name='MetaReview')}\n"
-                            f"{json.dumps(schema, ensure_ascii=False)}\n", encoding="utf-8")
+            path.write_text(dump_text(system, user, "MetaReview", lang), encoding="utf-8")
             print(f"  {path}")
         print("每份交给一个新的子代理，结果按 references/formats.md 第 9 节追加进 09_meta_reviews.json。")
         return
@@ -1267,18 +1297,7 @@ def cmd_review(args) -> None:
         record = {"proposal_id": pid, "reviewer": rv.name, "model": rv.model, "family": rv.family, "review": None, "error": ""}
         start = time.time()
         try:
-            text = rv.complete(system, user, schema, lang)
-            try:
-                review = extract_json(text)
-                errs = check(review, "MetaReview")
-            except ValueError as e:
-                errs = [str(e)]
-            if errs:   # 格式不对，带上错误再要一次
-                text = rv.complete(system, f"{user}\n\n{t['retry'].format(error='；'.join(errs))}", schema, lang)
-                review = extract_json(text)
-                if errs := check(review, "MetaReview"):
-                    raise RuntimeError("输出格式不对：" + "；".join(errs[:3]))
-            record.update(review=review, model=rv.used_model or rv.model)
+            record.update(review=ask(rv, system, user, "MetaReview", lang), model=rv.used_model or rv.model)
             print(f"  {rv.label} 评审完 {pid}（{time.time() - start:.0f} 秒）", flush=True)
         except (RuntimeError, ValueError, OSError) as e:
             record["error"] = str(e)[:500]
@@ -1296,13 +1315,146 @@ def cmd_review(args) -> None:
     print(f"完成：成功 {ok} 份，失败 {len(saved) - ok} 份。下一步：运行 next。")
 
 
+def ask(rv: Reviewer, system: str, user: str, name: str, lang: str) -> dict:
+    """调一次模型，取出 JSON 按 schema 检查；格式不对就带上错误再要一次。"""
+    schema = schemas(lang)[name]
+    text = rv.complete(system, user, schema, lang, name)
+    try:
+        data = extract_json(text)
+        errs = check(data, name)
+    except ValueError as e:
+        errs = [str(e)]
+    if errs:
+        text = rv.complete(system, f"{user}\n\n{TX[lang]['retry'].format(error='；'.join(errs))}", schema, lang, name)
+        data = extract_json(text)
+        if errs := check(data, name):
+            raise RuntimeError("输出格式不对：" + "；".join(errs[:3]))
+    return data
+
+
+def dump_text(system: str, user: str, name: str, lang: str) -> str:
+    """给子代理的材料：要求、材料和输出格式写在一个文件里。"""
+    return (f"{system}\n\n{user}\n\n---\n{TX[lang]['json_instruction'].format(name=name)}\n"
+            f"{json.dumps(schemas(lang)[name], ensure_ascii=False)}\n")
+
+
+def default_chair(choices: list[tuple[str, str]]) -> str | None:
+    """综合元评审默认用谁：环境变量 IDEA_REVIEW_CHAIR 设了就用它，没设就用本机能用的第一家。"""
+    return os.environ.get(CHAIR_ENV, "").strip() or (choices[0][0] if choices else None)
+
+
+def chair_choices() -> list[tuple[str, str]]:
+    """本机能做综合元评审的：(名字, 不写型号时用的型号)。"""
+    return [(name, CHAIR_MODELS.get(name) or REVIEWERS.get(name, {}).get("model") or os.environ.get("IDEA_REVIEW_API_MODEL", ""))
+            for name, _, _ in available_reviewers()]
+
+
+def cmd_chair(args) -> None:
+    run = Run(args.run)
+    meta = run.meta()
+    lang, t = meta["lang"], TX[meta["lang"]]
+    metas = [m for m in run.load("09_meta_reviews", []) if m.get("review")]
+    # 按评审名字排，代号 A、B 每次都对应同一位评审
+    todo = [(rec, sorted((m for m in metas if m["proposal_id"] == rec["proposal_id"]), key=lambda m: m["reviewer"]))
+            for rec in run.load("08_proposals", []) if rec.get("proposal")]
+    todo = [(rec, mine) for rec, mine in todo if len(mine) >= 2]
+    if not todo:
+        raise Stop("综合元评审要一份 proposal 至少有两份成功的评审。先用 review 多请一家评审，或者直接出报告。")
+    system_raw, user_raw = (SKILL_DIR / "assets" / f"chair.{lang}.md").read_text(encoding="utf-8").split("---USER---", 1)
+    digests, texts, by_id = review_material(run, meta)
+
+    def excerpts(rec: dict, mine: list[dict]) -> str:
+        # 先放几家评审都说撞车的，再放 proposal 自己引用的
+        named = Counter(pid for m in mine for pid in {o["paper_id"] for o in m["review"]["overlap"]})
+        ids = [pid for pid, _ in named.most_common()] + [c["paper_id"] for c in rec["proposal"]["closest_work"]]
+        ids = [pid for pid in dict.fromkeys(ids) if pid in texts and pid in by_id][:CHAIR_EXCERPT_PAPERS]
+        return "\n\n".join(t["excerpt"].format(line=paper_line(by_id[pid], t), text=clip(texts[pid].read_text(encoding="utf-8"), REVIEW_EXCERPT_CHARS, t))
+                           for pid in ids) or t["no_chair_excerpts"]
+
+    def prompt(rec: dict, mine: list[dict]) -> tuple[str, str, dict]:
+        # 评审的名字换成代号 A、B……，免得综合的模型看牌子偏信哪一家
+        codes = {chr(ord("A") + i): m["reviewer"] for i, m in enumerate(mine)}
+        reviews = "\n\n".join(f"{t['chair_reviewer'].format(code=code)}\n{json.dumps(m['review'], ensure_ascii=False, indent=1)}"
+                               for code, m in zip(codes, mine))
+        values = {"language": meta["language"], "proposal": proposal_text(rec["proposal_id"], rec["proposal"], t), "n": len(mine),
+                  "codes": t["names_sep"].join(codes), "reviews": reviews, "digests": digests, "fulltexts": excerpts(rec, mine)}
+        return Template(system_raw.strip()).safe_substitute(values), Template(user_raw.strip()).safe_substitute(values), codes
+
+    if args.dump:
+        # 不想再花钱、或者本机没有能调用的模型时给子代理用；代号对应谁记在 codes.json，不放进材料
+        out = run.dir / "chair_prompts"
+        out.mkdir(exist_ok=True)
+        codes = {}
+        for rec, mine in todo:
+            system, user, codes[rec["proposal_id"]] = prompt(rec, mine)
+            path = out / f"{rec['proposal_id']}.md"
+            path.write_text(dump_text(system, user, "ChairSummary", lang), encoding="utf-8")
+            print(f"  {path}")
+        (out / "codes.json").write_text(json.dumps(codes, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("每份交给一个新的子代理，结果按 references/formats.md 第 10 节写进 10_chair.json，reviewers 照抄 codes.json 里对应的那份。")
+        return
+
+    saved = {c["proposal_id"]: c for c in run.load("10_chair", [])}
+    if not args.again:
+        todo = [(rec, mine) for rec, mine in todo if not (saved.get(rec["proposal_id"]) or {}).get("summary")]
+    if not todo:
+        print("这些综合元评审都已经做完了。要换个模型重做，加 --again。下一步：运行 next。")
+        return
+    choices = chair_choices()
+    by = args.by or default_chair(choices)
+    if not by:
+        raise Stop(f"本机没有能调用的模型（{' / '.join(REVIEWERS)}，或者 IDEA_REVIEW_API_*）。可以用 --dump 交给子代理做，见 references/steps.md 第 10 节。")
+    rv = Reviewer(by, args.timeout, None if args.effort == "none" else args.effort, chair=True)
+    if rv.name in ("gemini", "api"):
+        rv.effort = None
+    writer = meta["writer"]["family"]
+    if rv.family == writer:
+        print(f"注意：{rv.label} 和写 proposal 的是同一家（{writer}）的模型。它在新会话里做，不知道 proposal 是谁写的，"
+              "评审名字也换成了代号，但可能还是偏向自家写的东西。", flush=True)
+    effort = f"，思考强度 {rv.effort}" if rv.effort else ""
+    print(f"综合元评审：{len(todo)} 份 proposal，用 {rv.label}{effort}（同时最多 2 份，每份可能要十几分钟）……", flush=True)
+    save_lock = threading.Lock()
+
+    def one(rec: dict, mine: list[dict]) -> None:
+        pid = rec["proposal_id"]
+        system, user, codes = prompt(rec, mine)
+        record = {"proposal_id": pid, "chair": rv.name, "model": rv.model, "effort": rv.effort or "", "family": rv.family,
+                  "reviewers": codes, "summary": None, "error": ""}
+        start = time.time()
+        try:
+            record.update(summary=ask(rv, system, user, "ChairSummary", lang), model=rv.used_model or rv.model)
+            print(f"  {rv.label} 综合完 {pid}（{time.time() - start:.0f} 秒）", flush=True)
+        except (RuntimeError, ValueError, OSError) as e:
+            record["error"] = str(e)[:500]
+            print(f"  {rv.label} 综合 {pid} 失败：{record['error'][:200]}", flush=True)
+        with save_lock:
+            if record["summary"] or not (saved.get(pid) or {}).get("summary"):   # 重做失败了就留着原来的
+                saved[pid] = record
+            run.save("10_chair", list(saved.values()))
+            usage = run.load("usage", {})
+            usage[f"chair:{rv.name}"] = {"model": rv.used_model or rv.model or rv.name, **rv.usage}
+            run.save("usage", usage)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda job: one(*job), todo))
+    ok = sum(1 for c in saved.values() if c.get("summary"))
+    print(f"完成：{ok} 份 proposal 有综合元评审。下一步：运行 next。")
+
+
 def cmd_reviewers(args) -> None:
     found = available_reviewers(args.writer)
     if not found:
         print(f"本机没找到 {' / '.join(REVIEWERS)} 命令，也没配 IDEA_REVIEW_API_BASE 和 IDEA_REVIEW_API_KEY。")
         return
+    chair = dict(chair_choices())
     for name, family, same in found:
-        print(f"  {name}（{family}）" + ("  ← 和你是同一家，不适合做评审" if same else ""))
+        print(f"  {name}（{family}）" + ("  ← 和你是同一家，不适合做评审" if same else "")
+              + (f"  综合元评审默认用 {chair[name]}" if chair.get(name) else "  综合元评审用它自带的默认型号"))
+    by = default_chair(list(chair.items()))
+    if by and ":" not in by and chair.get(by):
+        by = f"{by}:{chair[by]}"
+    print(f"综合元评审默认用 {by}" + (f"（环境变量 {CHAIR_ENV}）" if os.environ.get(CHAIR_ENV, "").strip() else "")
+          + f"。要换：ir.py chair 加 --by claude:fable 这样的参数，或者 export {CHAIR_ENV}=claude:fable，以后都用它。")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1334,9 +1486,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--writer", choices=FAMILIES)
     p = sub.add_parser("review", help="请别家模型做元评审")
     p.add_argument("run")
-    p.add_argument("--reviewer", action="append", help="claude / codex / gemini / api，可以写成 codex:模型名；可以写多次")
+    p.add_argument("--reviewer", action="append", help="claude / codex / gemini / codebuddy / api，可以写成 codex:模型名；可以写多次")
     p.add_argument("--timeout", type=int, default=900, help="每次调用最多等多少秒，默认 900")
     p.add_argument("--dump", action="store_true", help="不调用模型，只把评审材料写进 review_prompts/，给子代理代评用")
+    p = sub.add_parser("chair", help="用最强的模型把几位评审的意见综合成最终的元评审")
+    p.add_argument("run")
+    p.add_argument("--by", help="claude / codex / gemini / codebuddy / api，可以写成 claude:fable 指定型号；"
+                                f"不写型号时 claude 用 opus、gemini 用 pro。不想每次写，就设环境变量 {CHAIR_ENV}")
+    p.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max", "none"), default=CHAIR_EFFORT,
+                   help=f"思考强度，默认 {CHAIR_EFFORT}；none 表示用工具自己的默认值。gemini 和 api 不支持")
+    p.add_argument("--timeout", type=int, default=1800, help="每次调用最多等多少秒，默认 1800")
+    p.add_argument("--again", action="store_true", help="已经做过的也重做，比如换了更强的模型")
+    p.add_argument("--dump", action="store_true", help="不调用模型，只把材料写进 chair_prompts/，给子代理用")
     args = ap.parse_args(argv)
     for key in ("candidates", "refs", "ideas", "min_fulltexts", "per_query"):
         value = getattr(args, key, None)
@@ -1345,7 +1506,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     try:
         {"init": cmd_init, "search": cmd_search, "fetch": cmd_fetch, "next": cmd_next,
-         "reviewers": cmd_reviewers, "review": cmd_review}[args.cmd](args)
+         "reviewers": cmd_reviewers, "review": cmd_review, "chair": cmd_chair}[args.cmd](args)
     except Stop as e:
         print(e, file=sys.stderr)
         return 1
