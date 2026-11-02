@@ -71,7 +71,7 @@ uv run SKILL_DIR/scripts/ir.py review RUN --reviewer codex --reviewer gemini
 uv run SKILL_DIR/scripts/ir.py chair RUN --by claude
 ```
 
-它用最强的模型把几位评审的意见综合成一份最终的元评审：合并去重最要紧的问题，对照精读笔记和全文核对评审说的撞车论文，列出分歧，挑出最该先做的证伪实验。`--by` 选本机能用的最强的一家，`next` 会列出来；不写型号时 claude 用 opus（现在是 Opus 5.5）、gemini 用 pro。用户指定了型号就写成 `--by claude:fable` 这样；用户设了环境变量 `IDEA_REVIEW_CHAIR`（比如 `claude:fable`），不写 `--by` 就用它。思考强度默认 xhigh。可以和你是同一家：它在新会话里做，不知道 proposal 是谁写的。这一步也要花用户的额度，先说清用哪个模型，用户点头再跑；每份可能要十几分钟，放到后台。用户不想再花钱就跳过。只有一份评审的 proposal 没法综合。见第 10 节。
+它用最强的模型把几位评审的意见综合成一份最终的元评审：合并去重最要紧的问题，对照精读笔记和全文核对评审说的撞车论文，列出分歧，挑出最该先做的证伪实验。`--by` 选本机能用的最强的一家，`next` 会列出来；不写型号时 claude 用 opus（现在是 Opus 5.5）、gemini 用 pro。用户指定了型号就写成 `--by claude:fable` 这样；用户设了环境变量 `IDEA_REVIEW_CHAIR`（比如 `claude:fable`），不写 `--by` 就用它。思考强度默认 xhigh。账号用不了这个型号时，脚本会自动退回这个工具自带的默认型号再试；还不行，`next` 会建议换一家，换之前先问用户。可以和你是同一家：它在新会话里做，不知道 proposal 是谁写的。这一步也要花用户的额度，先说清用哪个模型，用户点头再跑；每份可能要十几分钟，放到后台。用户不想再花钱就跳过。只有一份评审的 proposal 没法综合。见第 10 节。
 
 **11. 出报告**：
 

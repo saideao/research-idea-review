@@ -41,7 +41,7 @@ How it differs from the command-line version:
   export IDEA_REVIEW_CHAIR=claude:fable
   ```
 
-  It takes the same `tool:model` form as `--by`, e.g. `codex:gpt-6.1-terra`. Your account must have that model, or this step fails; switch back and run it again.
+  It takes the same `tool:model` form as `--by`, e.g. `codex:gpt-6.1-terra`. If your account cannot use the model (say your plan has no opus), it falls back to that tool's own default model and tries again, and the report records the model actually used; if that fails too, `next` suggests another tool.
 - The run directory uses the same file formats as the command-line version, and the report looks the same.
 
 Install it in Claude Code:
@@ -305,7 +305,7 @@ The tests do not use the network: they run the whole pipeline with fake search r
 
 - New combined meta review: once several reviewers are done, the strongest model combines their opinions into one final meta review, shown first in each proposal's review section. It merges and deduplicates the most serious issues and marks the ones every reviewer raised; checks each overlapping paper the reviewers named against the reading notes and full-text excerpts, marking it confirmed, partial, not supported or cannot be checked; lists where the reviewers disagree and how to tell who is right; and picks the falsification experiment to run first out of the reviewers' designs. The reviews it gets carry only the codes A, B; the report maps them back to names. It replaces the old "summary of the reviews", which listed only agreement and disagreement.
   - Skill version: `ir.py chair RUN --by claude` (opus by default; `--by gemini` uses pro; thinking effort xhigh by default; to default to another model, set an environment variable such as `IDEA_REVIEW_CHAIR=claude:fable`). The agent used to write the summary itself; now the strongest model does it in a fresh session. Skip it if you do not want to spend more, or hand it to a subagent with `--dump`. Summaries in old run directories still show up.
-  - Command-line version: set `chair` under `[roles]` to the strongest model you have; the example config uses `claude-opus-5-5` with `effort = "xhigh"`; to switch, change only the `model` line under `[providers.strongest]`. Old-format summaries cannot be read; continuing a run (`--resume`) redoes this step.
+  - Command-line version: set `chair` under `[roles]` to the strongest model you have; the example config uses `claude-opus-5-5` with `effort = "xhigh"`; to switch, change only the `model` line under `[providers.strongest]`. If that model errors out (say your account cannot use it), the proposal writer's model is used instead. Old-format summaries cannot be read; continuing a run (`--resume`) redoes this step.
 - WorkBuddy support. Copy the skill into `~/.workbuddy/skills/` and the models in WorkBuddy (Hunyuan hy3, for example) can run the whole pipeline. After the review, the report can be published as a web app with a share link. What gets published is a separate copy written by `report.py RUN --site`, with no local paths or paper PDFs, marked so search engines do not index it.
 
   Example: start a new task in WorkBuddy, pick a workspace and a model, and paste the text below. It is a low-cost trial run: 12 candidates, 3 papers read in full, 1 proposal, and a single meta review from codex's small model. For real use, drop the count options, and you can ask more reviewers.

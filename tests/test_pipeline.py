@@ -338,6 +338,22 @@ def test_chair_sees_reviewer_codes_and_report_maps_them_back(tmp_path, mock_conf
     assert sent and all(c["summary"] and "key_issues" in c["summary"] for c in load(run_dir, "10_chair"))
 
 
+def test_chair_falls_back_to_the_writer(tmp_path, mock_config, monkeypatch, offline):
+    """综合元评审用的模型报错（比如账号用不了这个型号），退回写 proposal 的模型。"""
+    real_call = pl.Pipeline._call
+
+    async def call(self, role, prompt, model_cls, **values):
+        if prompt == "chair" and role == "reviewer_b":
+            raise LLMError("reviewer_b 接口报错（404）：model not found")
+        return await real_call(self, role, prompt, model_cls, **values)
+    monkeypatch.setattr(pl.Pipeline, "_call", call)
+    assert run_cli(tmp_path, mock_config) == 0
+    run_dir = tmp_path / "r"
+    chairs = load(run_dir, "10_chair")
+    assert chairs and all(c["summary"] and c["chair"] == "writer_mock" and c["model"] == "mock-a" for c in chairs)
+    assert "改用写 proposal 的 writer_mock 再试" in (run_dir / "run.log").read_text(encoding="utf-8")
+
+
 def test_mock_runs_need_queries_from_the_command_line(tmp_path, mock_config, offline, capsys):
     argv = ["run", IDEA, "--config", str(mock_config.path), "--runs-dir", str(tmp_path), "--name", "r"]
     assert cli.main(argv) == 2

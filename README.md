@@ -41,7 +41,7 @@
   export IDEA_REVIEW_CHAIR=claude:fable
   ```
 
-  写法和 `--by` 一样，`工具:型号`，比如 `codex:gpt-6.1-terra`。型号要你的账号能用，不然这一步会报错，换回来再跑一次就行。
+  写法和 `--by` 一样，`工具:型号`，比如 `codex:gpt-6.1-terra`。账号用不了指定的型号时（比如订阅里没有 opus），会自动退回这个工具自带的默认型号再试，报告里记的是实际用的型号；还不行，`next` 会建议换一家。
 - 运行目录里的文件格式和命令行版一样，报告样式也一样。
 
 在 Claude Code 里安装：
@@ -305,7 +305,7 @@ uv run pytest
 
 - 新增综合元评审：几家评审评完以后，用最强的模型把它们的意见综合成一份最终的 meta review，放在每份 proposal 评审部分的最前面。它合并去重最要紧的问题，标出几家都提到的；对照精读笔记和全文节选逐篇核对评审说的撞车论文，标成证实、部分重合、不支持或核对不了；列出评审之间的分歧和怎么判断谁对；从各家的证伪实验里挑出最该先做的一个。交给它的评审意见只带代号 A、B，报告里再换回名字。它取代原来只列共识和分歧的"评审意见汇总"。
   - skill 版：`ir.py chair RUN --by claude`（默认 opus，`--by gemini` 默认 pro，思考强度默认 xhigh；想默认用别的模型，设 `IDEA_REVIEW_CHAIR=claude:fable` 这样的环境变量）。原来的汇总由 agent 自己写，现在交给最强的模型在新会话里做；不想再花钱就跳过，或者用 `--dump` 交给子代理。旧运行目录里的汇总照样显示。
-  - 命令行版：`[roles]` 里的 `chair` 换成你能用的最强模型，示例配置里是 `claude-opus-5-5`、`effort = "xhigh"`，换模型只改 `[providers.strongest]` 里的 `model` 一行。旧格式的汇总读不进来，接着跑（`--resume`）时会重做这一步。
+  - 命令行版：`[roles]` 里的 `chair` 换成你能用的最强模型，示例配置里是 `claude-opus-5-5`、`effort = "xhigh"`，换模型只改 `[providers.strongest]` 里的 `model` 一行。这个模型报错时（比如账号用不了），自动改用写 proposal 的模型。旧格式的汇总读不进来，接着跑（`--resume`）时会重做这一步。
 - 支持 WorkBuddy。把 skill 复制到 `~/.workbuddy/skills/`，就能用 WorkBuddy 里的模型（比如混元 hy3）跑完整个流程。评审完还能把报告发布成网页应用，拿到分享链接。发布的是 `report.py RUN --site` 另外生成的副本，不含本机路径和论文 PDF，也不让搜索引擎收录。
 
   示例：在 WorkBuddy 里新建任务，选好工作空间和模型，贴这段话。这是一次低开销的试跑：只取 12 篇候选、精读 3 篇、写 1 份 proposal，元评审只请 codex 的小模型评一次。正式用时去掉这些数量参数，评审也可以多请几家。

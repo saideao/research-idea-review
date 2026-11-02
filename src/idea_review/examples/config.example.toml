@@ -19,7 +19,7 @@ concurrency = 4
 
 [providers.strongest]
 type = "anthropic"                 # 综合元评审用你能用的最强模型，思考强度开高
-model = "claude-opus-5-5"          # 换模型只改这一行，比如 "claude-fable-5-1"（你的账号要能用）
+model = "claude-opus-5-5"          # 换模型只改这一行，比如 "claude-fable-5-1"。账号用不了时自动改用 writer 的模型
 api_key_env = "ANTHROPIC_API_KEY"
 family = "anthropic"
 effort = "xhigh"

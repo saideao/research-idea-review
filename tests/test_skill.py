@@ -464,6 +464,36 @@ def test_chair_combines_the_reviews_with_the_strongest_model(tmp_path, capsys, o
     assert "旧的汇总" in (run / "report.html").read_text(encoding="utf-8")
 
 
+def test_chair_falls_back_when_the_model_is_not_available(tmp_path, capsys, only_fake_clis):
+    """账号用不了 opus 时，退回 claude 自带的默认型号再试；还不行，next 建议换一家。"""
+    run = walk_to_proposals(tmp_path, capsys)
+    fake_cli(tmp_path, "codex", CODEX_OK)
+    review = json.dumps(mock_json("MetaReview"), ensure_ascii=False)
+    fake_cli(tmp_path, "gemini", f"print(json.dumps({{'response': {review!r}, 'stats': {{'models': {{}}}}}}))")
+    assert run_ir("review", str(run)) == 0
+    fake_cli(tmp_path, "claude", "if '--model' in argv:\n"
+                                 "    print(json.dumps({'is_error': True, 'result': 'model opus is not available on your plan'})); sys.exit(1)\n"
+                                 f"print(json.dumps({{'is_error': False, 'structured_output': {chair_sample()!r}, "
+                                 f"'modelUsage': {{'claude-sonnet-5-5': {{}}}}, 'usage': {{}}}}))")
+    (tmp_path / "calls.jsonl").unlink()
+    capsys.readouterr()
+    assert run_ir("chair", str(run), "--by", "claude") == 0
+    assert "claude:opus 用不了（报错：model opus is not available on your plan），改用 claude 自带的默认型号再试" in capsys.readouterr().out
+    calls = [json.loads(line)["argv"] for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert "--model" in calls[0] and "--model" not in calls[-1]
+    assert all(c["summary"] and c["model"] == "claude-sonnet-5-5" for c in json.loads((run / "10_chair.json").read_text()))
+
+    # 默认型号也不行：记下失败，next 建议换一家，不自己换
+    fake_cli(tmp_path, "claude", "print(json.dumps({'is_error': True, 'result': 'usage limit reached'})); sys.exit(1)")
+    assert run_ir("chair", str(run), "--by", "claude", "--again") == 0
+    (run / "10_chair.json").write_text(json.dumps([dict(c, summary=None, error="报错：usage limit reached")
+                                                   for c in json.loads((run / "10_chair.json").read_text())]), encoding="utf-8")
+    capsys.readouterr()
+    run_ir("next", str(run))
+    out = capsys.readouterr().out
+    assert "usage limit reached" in out and "换成 codex 试试" in out and f"ir.py chair {run} --by codex" in out
+
+
 def test_chair_takes_another_model_and_effort(tmp_path, capsys, only_fake_clis, monkeypatch):
     """环境变量 IDEA_REVIEW_CHAIR 换掉默认的模型，--by 再临时换；codex 用 -c 设思考强度，gemini 没有这个参数；
     --dump 不调用模型，代号对应谁另外记。"""

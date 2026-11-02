@@ -662,9 +662,9 @@ class Pipeline:
                 todo.append((rec, ok))
         if not todo:
             return list(saved.values())
-        chair = self.cfg.provider("chair")
+        chair, writer = self.cfg.provider("chair"), self.cfg.provider("writer")
         self.log(f"第 10 步：{chair.name} 把几位评审的意见综合成最终的元评审（{len(todo)} 份）")
-        if chair.family == self.cfg.provider("writer").family:
+        if chair.family == writer.family:
             self.log(f"  注意：做综合元评审的 {chair.name} 和写 proposal 的是同一家（family = {chair.family}），可能偏向自家写的东西。")
         strong, weak = self._digests(papers, reviews)
         digests = "\n\n".join(strong + weak) or self.t["no_fulltext_notes"]
@@ -686,17 +686,24 @@ class Pipeline:
             codes = {chr(ord("A") + i): m.reviewer for i, m in enumerate(ok)}
             text = "\n\n".join(f"{self.t['chair_reviewer'].format(code=code)}\n{m.review.model_dump_json(indent=1)}"
                                 for code, m in zip(codes, ok))
-            record = ChairRecord(proposal_id=rec.proposal_id, chair=chair.name, model=chair.model, effort=chair.effort or "",
-                                 family=chair.family, reviewers=codes)
-            try:
-                summary = await self._call("chair", "chair", ChairSummary, proposal=proposal_text(rec.proposal_id, rec.proposal, self.t),
-                                           n=len(ok), codes=self.t["names_sep"].join(codes), reviews=text, digests=digests,
-                                           fulltexts=excerpts(rec.proposal, ok))
-            except LLMError as e:
-                self.log(f"  {rec.proposal_id} 综合元评审失败：{e}")
-                return record.model_copy(update={"error": str(e)})
-            self.log(f"  {chair.name} 综合完 {rec.proposal_id}")
-            return record.model_copy(update={"summary": summary})
+            values = dict(proposal=proposal_text(rec.proposal_id, rec.proposal, self.t), n=len(ok), codes=self.t["names_sep"].join(codes),
+                          reviews=text, digests=digests, fulltexts=excerpts(rec.proposal, ok))
+            # 综合用的模型报错（比如账号用不了这个型号）时，退回写 proposal 的模型：它前面已经跑通了
+            errors = []
+            for p in [chair] + ([writer] if writer.name != chair.name else []):
+                try:
+                    summary = await self._call(p.name, "chair", ChairSummary, by_name=True, **values)
+                except LLMError as e:
+                    errors.append(str(e))
+                    if p is chair and writer.name != chair.name:
+                        self.log(f"  {chair.name} 综合 {rec.proposal_id} 失败：{e}。改用写 proposal 的 {writer.name} 再试")
+                    continue
+                self.log(f"  {p.name} 综合完 {rec.proposal_id}")
+                return ChairRecord(proposal_id=rec.proposal_id, chair=p.name, model=p.model, effort=p.effort or "", family=p.family,
+                                   reviewers=codes, summary=summary)
+            self.log(f"  {rec.proposal_id} 综合元评审失败：{errors[-1]}")
+            return ChairRecord(proposal_id=rec.proposal_id, chair=chair.name, model=chair.model, effort=chair.effort or "",
+                               family=chair.family, reviewers=codes, error="；".join(errors))
 
         for c in await asyncio.gather(*(one(r, ok) for r, ok in todo)):
             saved[c.proposal_id] = c

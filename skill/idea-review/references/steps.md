@@ -125,7 +125,7 @@ export IDEA_REVIEW_API_MODEL=模型名
 - 从各家的证伪实验里挑出或合成最该先做的一个，合并作者必须回答的问题和必须亲自核实的说法。
 - 不打分，不说"建议做"或"建议放弃"。
 
-挑模型：用本机能用的最强的模型，`ir.py reviewers` 会列出每家默认用哪个型号（claude 用 opus，现在是 Opus 5.5；gemini 用 pro；codex 用它自带的默认型号；codebuddy 用 hy3）。用户想用别的型号，一次性的用 `--by 工具:型号` 指定，比如 `--by claude:fable`；想以后都用它，让用户设环境变量 `IDEA_REVIEW_CHAIR=claude:fable`，写法和 `--by` 一样，设了以后不写 `--by` 就用它。拿不准哪个最强就问用户。型号用户的账号用不了时这一步会报错，换一个再跑。`--effort` 设思考强度，默认 xhigh，gemini 和 api 没有这个参数。
+挑模型：用本机能用的最强的模型，`ir.py reviewers` 会列出每家默认用哪个型号（claude 用 opus，现在是 Opus 5.5；gemini 用 pro；codex 用它自带的默认型号；codebuddy 用 hy3）。用户想用别的型号，一次性的用 `--by 工具:型号` 指定，比如 `--by claude:fable`；想以后都用它，让用户设环境变量 `IDEA_REVIEW_CHAIR=claude:fable`，写法和 `--by` 一样，设了以后不写 `--by` 就用它。拿不准哪个最强就问用户。型号用户的账号用不了时（比如订阅里没有 opus），脚本自动退回这个工具自带的默认型号（claude、codex、gemini 不加型号参数，codebuddy 用 hy3）再试一次，报告里记的是实际用的型号。超时和输出格式不对不算，不退。默认型号也失败的，`next` 会建议换一家；换别家会用掉另一份订阅，先问用户。`--effort` 设思考强度，默认 xhigh，gemini 和 api 没有这个参数。
 
 交给它的评审意见里，评审名字换成了代号 A、B……（按评审名字排序），免得它看牌子偏信哪一家；`10_chair.json` 的 `reviewers` 记着代号对应谁，报告里会换回名字。失败的再运行一次 chair 会重做；已经做完的想换个模型重做，加 `--again`，重做失败时保留原来的结果。
 

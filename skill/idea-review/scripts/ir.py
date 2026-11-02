@@ -83,6 +83,14 @@ class Stop(Exception):
     """出错或者需要先做别的事。消息直接打印给 agent 看。"""
 
 
+class CallTimeout(RuntimeError):
+    """调用超时。换个型号也不见得快，不退回默认型号。"""
+
+
+class BadFormat(RuntimeError):
+    """模型答了，但格式不对。说明型号能用，不退回默认型号。"""
+
+
 # ---------- 运行目录 ----------
 
 class Run:
@@ -1003,10 +1011,16 @@ def cmd_next(args) -> None:
     need_chair = [pid for pid in expected if n_ok[pid] >= 2 and not (chairs.get(pid) or {}).get("summary")]
     if need_chair:
         failed = [pid for pid in need_chair if (chairs.get(pid) or {}).get("error")]
-        if failed:
-            print(f"{'、'.join(failed)} 的综合元评审失败了：{chairs[failed[0]]['error'][:200]}")
         choices = chair_choices()
         by = default_chair(choices)
+        if failed:
+            print(f"{'、'.join(failed)} 的综合元评审失败了：{chairs[failed[0]]['error'][:200]}")
+            # 退回默认型号也不行的，建议换一家；换别家会用掉另一份订阅，先问用户
+            failed_with = {chairs[pid].get("chair") for pid in failed}
+            others = [name for name, _ in choices if name not in failed_with]
+            if by and by.partition(":")[0] in failed_with and others:
+                by = others[0]
+                print(f"  换成 {by} 试试。这会用掉 {by} 的订阅额度或 API 费用，先问用户。")
         if not by:
             return step(f"把几位评审的意见综合成最终的元评审：本机没有能调用的模型，运行 ir.py chair {run.dir} --dump，"
                         "按 references/steps.md 第 10 节交给子代理。")
@@ -1141,7 +1155,7 @@ class Reviewer:
         try:
             proc = subprocess.run(args, input=stdin.encode("utf-8"), capture_output=True, cwd=cwd, env=env, timeout=self.timeout)
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"超过 {self.timeout} 秒没有返回，可以用 --timeout 调大") from None
+            raise CallTimeout(f"超过 {self.timeout} 秒没有返回，可以用 --timeout 调大") from None
         return proc.stdout.decode("utf-8", "replace"), proc.stderr.decode("utf-8", "replace"), proc.returncode
 
     @staticmethod
@@ -1328,7 +1342,7 @@ def ask(rv: Reviewer, system: str, user: str, name: str, lang: str) -> dict:
         text = rv.complete(system, f"{user}\n\n{TX[lang]['retry'].format(error='；'.join(errs))}", schema, lang, name)
         data = extract_json(text)
         if errs := check(data, name):
-            raise RuntimeError("输出格式不对：" + "；".join(errs[:3]))
+            raise BadFormat("输出格式不对：" + "；".join(errs[:3]))
     return data
 
 
@@ -1336,6 +1350,15 @@ def dump_text(system: str, user: str, name: str, lang: str) -> str:
     """给子代理的材料：要求、材料和输出格式写在一个文件里。"""
     return (f"{system}\n\n{user}\n\n---\n{TX[lang]['json_instruction'].format(name=name)}\n"
             f"{json.dumps(schemas(lang)[name], ensure_ascii=False)}\n")
+
+
+def fallback_model(rv: Reviewer) -> str | None:
+    """型号用不了时退回去用的型号：工具自带的默认型号（claude、codex、gemini 不加型号参数，codebuddy 用 hy3）。
+    已经是默认型号、或者是 api 的，没得退，返回 None。只在同一个工具里退，不自动换别家：那会用掉另一份订阅。"""
+    if rv.name == "api":
+        return None
+    default = REVIEWERS[rv.name].get("model", "")
+    return default if rv.model != default else None
 
 
 def default_chair(choices: list[tuple[str, str]]) -> str | None:
@@ -1415,18 +1438,38 @@ def cmd_chair(args) -> None:
     print(f"综合元评审：{len(todo)} 份 proposal，用 {rv.label}{effort}（同时最多 2 份，每份可能要十几分钟）……", flush=True)
     save_lock = threading.Lock()
 
+    fallback_lock = threading.Lock()
+
+    def summarize(system: str, user: str) -> dict:
+        tried = rv.model
+        try:
+            return ask(rv, system, user, "ChairSummary", lang)
+        except (CallTimeout, BadFormat):
+            raise
+        except RuntimeError as e:
+            # 多半是账号用不了这个型号（比如订阅里没有 opus）：退回工具自带的默认型号再试一次
+            with fallback_lock:
+                if rv.model == tried:
+                    alt = fallback_model(rv)
+                    if alt is None:
+                        raise
+                    print(f"  {rv.label} 用不了（{str(e)[:150]}），改用{' ' + alt if alt else ' ' + rv.name + ' 自带的默认型号'}再试。", flush=True)
+                    rv.model = rv.used_model = alt
+                    rv.family = REVIEWERS[rv.name]["family"] or api_family(alt)
+            return ask(rv, system, user, "ChairSummary", lang)
+
     def one(rec: dict, mine: list[dict]) -> None:
         pid = rec["proposal_id"]
         system, user, codes = prompt(rec, mine)
-        record = {"proposal_id": pid, "chair": rv.name, "model": rv.model, "effort": rv.effort or "", "family": rv.family,
-                  "reviewers": codes, "summary": None, "error": ""}
-        start = time.time()
+        summary, error, start = None, "", time.time()
         try:
-            record.update(summary=ask(rv, system, user, "ChairSummary", lang), model=rv.used_model or rv.model)
+            summary = summarize(system, user)
             print(f"  {rv.label} 综合完 {pid}（{time.time() - start:.0f} 秒）", flush=True)
         except (RuntimeError, ValueError, OSError) as e:
-            record["error"] = str(e)[:500]
-            print(f"  {rv.label} 综合 {pid} 失败：{record['error'][:200]}", flush=True)
+            error = str(e)[:500]
+            print(f"  {rv.label} 综合 {pid} 失败：{error[:200]}", flush=True)
+        record = {"proposal_id": pid, "chair": rv.name, "model": rv.used_model or rv.model, "effort": rv.effort or "",
+                  "family": rv.family, "reviewers": codes, "summary": summary, "error": error}
         with save_lock:
             if record["summary"] or not (saved.get(pid) or {}).get("summary"):   # 重做失败了就留着原来的
                 saved[pid] = record

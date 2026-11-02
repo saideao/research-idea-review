@@ -21,7 +21,7 @@ concurrency = 4
 
 [providers.strongest]
 type = "anthropic"                 # use the strongest model you have for the combined meta review, with high effort
-model = "claude-opus-5-5"          # to switch, change only this line, e.g. "claude-fable-5-1" (if your account has it)
+model = "claude-opus-5-5"          # to switch, change only this line, e.g. "claude-fable-5-1"; falls back to the writer's model if your account cannot use it
 api_key_env = "ANTHROPIC_API_KEY"
 family = "anthropic"
 effort = "xhigh"
