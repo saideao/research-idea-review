@@ -4,3 +4,4 @@ __pycache__/
 runs/
 config.toml
 .env
+.DS_Store
